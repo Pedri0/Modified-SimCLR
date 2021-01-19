@@ -38,3 +38,18 @@ Flags :
     'metadata.')
 
 
+Lines 488 - 501 from original run.py script:
+    if FLAGS.use_tpu:
+        if FLAGS.tpu_name:
+        cluster = tf.distribute.cluster_resolver.TPUClusterResolver(
+            FLAGS.tpu_name, zone=FLAGS.tpu_zone, project=FLAGS.gcp_project)
+        else:
+        cluster = tf.distribute.cluster_resolver.TPUClusterResolver(FLAGS.master)
+        tf.config.experimental_connect_to_cluster(cluster)
+        topology = tf.tpu.experimental.initialize_tpu_system(cluster)
+        logging.info('Topology:')
+        logging.info('num_tasks: %d', topology.num_tasks)
+        logging.info('num_tpus_per_task: %d', topology.num_tpus_per_task)
+        strategy = tf.distribute.experimental.TPUStrategy(cluster)
+
+
