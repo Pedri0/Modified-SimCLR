@@ -41,12 +41,13 @@ def bulid_input_fn(global_batch_size, is_training):
         if is_training and FLAGS.train_mode == 'pretrain':
             print('Using Training Dataset')
             dataset = galax.get_data_train()
+        #TODO correct this. If is pretrain and lineareval_while_pretrain=True this dataset is not reached
         elif is_training and FLAGS.train_mode == 'finetune':
             print('Using Train Nair Dataset for finetuning')
-            dataset = galax.get_data_train()
+            dataset = galax.get_data_fine()
         else:
             print('Using Valid Dataset')
-            dataset = galax.get_data_fine()
+            dataset = galax.get_data_valid()
 
         if input_context.num_input_pipelines > 1:
             dataset = dataset.shard(input_context.num_input_pipelines, input_context.input_pipeline_id)
