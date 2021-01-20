@@ -49,8 +49,8 @@ flags.DEFINE_integer('checkpoint_steps', 0, 'Number of steps between checkpoints
 
 flags.DEFINE_string('eval_split', 'validation', 'Split for evaluation.')
 
-#changed 'imagenet2012' (default) to 'galaxies' because we'll not use imagenet2012 but its supported
-flags.DEFINE_string('dataset', 'galaxies', 'Name of a dataset.')
+#changed 'imagenet2012' (default) to 'astro' because we'll not use imagenet2012 but its supported
+flags.DEFINE_string('dataset', 'astro', 'Name of a dataset.')
 
 flags.DEFINE_enum('mode', 'train', ['train', 'eval', 'train_then_eval'],
     'Whether to perform training or evaluation.')
@@ -85,6 +85,8 @@ flags.DEFINE_integer('keep_checkpoint_max', 20, 'Maximum number of checkpoints t
 flags.DEFINE_integer('keep_hub_module_max', 1, 'Maximum number of Hub modules to keep.')
 
 flags.DEFINE_float('temperature', 0.1, 'Temperature parameter for contrastive loss.')
+
+flags.DEFINE_boolean('hidden_norm', True, 'Temperature parameter for contrastive loss.')
 
 flags.DEFINE_enum('proj_head_mode', 'nonlinear', ['none', 'linear', 'nonlinear'], 'How the head projection is done.')
 
@@ -265,10 +267,28 @@ def perform_evaluation(model, builder, eval_steps, ckpt, strategy, topology):
     
     return result
 
-
-
-
-
+def try_restore_from_checkpoint(model, global_step, optimizer):
+    #Restores the latest ckpt if it exist, otherwise check FLAGS.checkpoint
+    checkpoint = tf.train.Checkpoint(model=model, global_step=global_step, optimizer=optimizer)
+    checkpoint_manager = tf.train.CheckpointManager(checkpoint, directory=FLAGS.model_dir, max_to_keep=FLAGS.keep_checkpoint_max)
+    latest_ckpt = checkpoint_manager.latest_checkpoint
+    if latest_ckpt:
+        #Restore model weights, global step, optimizer states
+        logging.info('Restoring from latest checkpoint: %s', latest_ckpt)
+        checkpoint_manager.checkpoint.restore(latest_ckpt).expect_partial()
+    elif FLAGS.checkpoint:
+        #Restore model weigths only, but not global step and optimizer states
+        logging.info('Restoring from given checkpoint: %s', FLAGS.checkpoint)
+        checkpoint_manager2 = tf.train.CheckpointManager(tf.train.Checkpoint(model,model), directory=FLAGS.model_dir, max_to_keep=FLAGS.keep_checkpoint_max)
+        checkpoint_manager2.checkpoint.restore(FLAGS.checkpoint).expect_patial()
+        if FLAGS.zero_init_logits_layer:
+            model = checkpoint_manager2.checkpoint.model
+            ##Funcion del model.py?
+            output_layer_parameters = model.supervised_head.trainable_weights
+            logging.info('Initializing output layer params %s to zero', [x.op.name for x in output_layer_parameters])
+            for x in output_layer_parameters:
+                x.assign(tf.zeros_like(x))
+    return checkpoint_manager
 
 
 
@@ -326,15 +346,125 @@ def main(argv):
             #Build input pipeline
             if FLAGS.dataset == 'astro':
                 print('You are using a custom dataset: astro')
-                ds = data_astro.build_ditributed_dataset(FLAGS.train_batch_size, True, strategy)
+                ds = data_astro.build_distributed_dataset(FLAGS.train_batch_size, True, strategy)
             else:
                 ds = data_lib.build_distributed_dataset(builder, FLAGS.train_batch_size,True, strategy, topology)
 
+            #Build LR schedule and optimizer
+            learning_rate = model_lib.WarmUpAndCosineDecay(FLAGS.learning_rate, num_train_examples)
+            optimizer = model_lib.build_optimizer(learning_rate)
+
+            #Build Metrics
+            all_metrics = [] #for summaries
+            weight_decay_metric = tf.keras.metrics.Mean('train/weight_decay')
+            total_loss_metric = tf.keras.metrics.Mean('train/total_loss')
+            all_metrics.extend([weight_decay_metric, total_loss_metric])
+            if FLAGS.train_mode == 'pretrain':
+                contrast_loss_metric = tf.keras.metrics.Mean('train/contrast_loss')
+                contrast_acc_metric = tf.keras.metrics.Mean('train/contrast_acc')
+                contrast_entropy_metric = tf.keras.metrics.Mean('train/contrast_entropy')
+                all_metrics.extend([contrast_loss_metric, contrast_acc_metric, contrast_entropy_metric])
+            if FLAGS.train_mode == 'finetune' or FLAGS.lineareval_while_pretraining:
+                supervised_loss_metric = tf.keras.metrics.Mean('train/supervised_loss')
+                supervised_acc_metric = tf.keras.metrics.Mean('train/supervised_acc')
+                all_metrics.extend([supervised_loss_metric, supervised_acc_metric])
+
+            #Restore checkpoint if available
+            checkpoint_manager = try_restore_from_checkpoint(model, optimizer.iterations, optimizer)
+
+        steps_per_loop = checkpoint_steps
+
+        def single_step(features, labels):
+            with tf.GradientTape() as tape:
+                # Log summaries on the last step of the training loop to match
+                # logging frequency of other scalar summaries.
+                # Notes:
+                # 1. Summary ops on TPUs get outside compiled so they do not affect performance
+                # 2. Summaries are recorded only on replica 0. So effectively this
+                #    summary would be written once per host when should_record == True.
+                # 3. optimizer.iterations is incremented in the call to apply_gradients.
+                #    So we use  `iterations + 1` here so that the step number matches those of scalar summaries
+                # 4. We intentionally run the summary op before the actual model training so that it can run in parallel.
+                should_record = tf.equal((optimizer.iterations + 1) % steps_per_loop, 0)
+                with tf.summary.record_if(should_record):
+                    #only log augmented images for the first tower.
+                    tf.summary.image('image', features[:, :, :, :3], step=optimizer.iterations+1)
+                projection_head_outputs, supervised_head_outputs = model(features, training=True)
+                loss = None
+
+                if projection_head_outputs is not None:
+                    outputs = projection_head_outputs
+                    con_loss, logits_con, labels_con = obj_lib.add_contrastive_loss(
+                        outputs, hidden_norm=FLAGS.hidden_norm, temperature=FLAGS.temperature, strategy=strategy)
+                    if loss is None:
+                        loss = con_loss
+                    else:
+                        loss += con_loss
+                    metrics.update_pretrain_metrics_train(
+                        contrast_loss_metric, contrast_acc_metric, contrast_entropy_metric,con_loss,logits_con,labels_con)
+                
+                if supervised_head_outputs is not None:
+                    outputs = supervised_head_outputs
+                    l = labels['labels']
+                    if FLAGS.train_mode == 'pretrain' and FLAGS.lineareval_while_pretraining:
+                        l = tf.concat([l,l], 0)
+                    sup_loss = obj_lib.add_supervised_loss(labels=l, logits=outputs)
+                    if loss is None:
+                        loss = sup_loss
+                    else:
+                        loss += sup_loss
+                    metrics.update_finetune_metrics_train(supervised_loss_metric, supervised_acc_metric, sup_loss,l,outputs)
+
+                weight_decay = model_lib.add_weight_decay(model, adjust_per_optimizer=True)
+                weight_decay_metric.update_state(weight_decay)
+                loss += weight_decay
+                total_loss_metric.update_state(loss)
+                #The default behaviour of 'apply_gradients' is to sum gradients from all replicas so we divide the loss
+                #by te number of replicas so that the mean gradient is applied
+                loss = loss / strategy.num_replicas_in_sync
+                logging.info('Trainable variables:')
+                for var in model.trainable_variables:
+                    logging.info(var.name)
+                grads= tape.gradient(loss, model.trainable_variables)
+                optimizer.apply_gradients(zip(grads, model.trainable_variables))
+                
+        with strategy.scope():
+
+            @tf.function
+            def train_multiple_steps(iterator):
+                # `tf.range` is needed so that this runs in a `tf.while_loop` and is not unrolled
+                for _ in tf.range(steps_per_loop):
+                    with tf.name_scope(''):
+                        images, labels = next(iterator)
+                        features, labels = images, {'labels': labels}
+                        strategy.run(single_step, (features, labels))
+            
+            global_step = optimizer.iterations
+            cur_step = global_step.numpy()
+            iterator = iter(ds)
+
+            while cur_step < train_steps:
+                #Calls to tf.summary .xyz lookup the summary writer resource wich is set by the summary writer's context manager
+                with summary_writer.as_default():
+                    train_multiple_steps(iterator)
+                    cur_step = global_step.numpy()
+                    checkpoint_manager.save(cur_step)
+                    logging.info('Completed: %d / %d steps', cur_step, train_steps)
+                    metrics.log_and_write_metrics_to_summary(all_metrics, cur_step)
+                    tf.summary.scalar('learning_rate', learning_rate(tf.cast(global_step, dtype=tf.float32)),global_step)
+                    summary_writer.flush()
+                
+                for metric in all_metrics:
+                    metric.reset_states()
+            logging.info('Training complete :)')
+        
+        if FLAGS.mode == 'train_then_eval':
+            perform_evaluation(model, builder, eval_steps, checkpoint_manager.latest_checkpoint, strategy, topology)
 
 
 
 if __name__ == '__main__':
-    tf.compat.v1.enable_v2_bahavior()
+    tf.compat.v1.enable_v2_behavior()
     #necessary for GPU // For outside compilation of summaries on TPU.
     tf.config.set_soft_device_placement(True)
     app.run(main)

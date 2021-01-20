@@ -38,12 +38,15 @@ def bulid_input_fn(global_batch_size, is_training):
             label = tf.one_hot(label, num_classes)
             return image, label
 
-        if is_training:
+        if is_training and FLAGS.train_mode == 'pretrain':
             print('Using Training Dataset')
+            dataset = galax.get_data_train()
+        elif is_training and FLAGS.train_mode == 'finetune':
+            print('Using Train Nair Dataset for finetuning')
             dataset = galax.get_data_train()
         else:
             print('Using Valid Dataset')
-            dataset = galax.get_data_valid()
+            dataset = galax.get_data_fine()
 
         if input_context.num_input_pipelines > 1:
             dataset = dataset.shard(input_context.num_input_pipelines, input_context.input_pipeline_id)
