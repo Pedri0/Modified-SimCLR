@@ -2,54 +2,101 @@ Deleted options/funcs in original simclrtf2
 
 version 16 Enero 2021: last commit 18 Diciembre 2020:
 
-Flags :
+Run.py:
 
-    -- flags.DEFINE_bool(
-    'cache_dataset', False,
-    'Whether to cache the entire dataset in memory. If the dataset is '
-    'ImageNet, this is a very bad idea, but for smaller datasets it can '
-    'improve performance.')
+    Flags :
 
-    -- flags.DEFINE_string(
-    'master', None,
-    'Address/name of the TensorFlow master to use. By default, use an '
-    'in-process master.')
+        -- flags.DEFINE_bool(
+        'cache_dataset', False,
+        'Whether to cache the entire dataset in memory. If the dataset is '
+        'ImageNet, this is a very bad idea, but for smaller datasets it can '
+        'improve performance.')
 
-    --flags.DEFINE_bool(
-    'use_tpu', True,
-    'Whether to run on TPU.')
+        -- flags.DEFINE_string(
+        'master', None,
+        'Address/name of the TensorFlow master to use. By default, use an '
+        'in-process master.')
 
-    --flags.DEFINE_string(
-    'tpu_name', None,
-    'The Cloud TPU to use for training. This should be either the name '
-    'used when creating the Cloud TPU, or a grpc://ip.address.of.tpu:8470 '
-    'url.')
+        --flags.DEFINE_bool(
+        'use_tpu', True,
+        'Whether to run on TPU.')
 
-    --flags.DEFINE_string(
-    'tpu_zone', None,
-    '[Optional] GCE zone where the Cloud TPU is located in. If not '
-    'specified, we will attempt to automatically detect the GCE project from '
-    'metadata.')
+        --flags.DEFINE_string(
+        'tpu_name', None,
+        'The Cloud TPU to use for training. This should be either the name '
+        'used when creating the Cloud TPU, or a grpc://ip.address.of.tpu:8470 '
+        'url.')
 
-    --flags.DEFINE_string(
-    'gcp_project', None,
-    '[Optional] Project name for the Cloud TPU-enabled project. If not '
-    'specified, we will attempt to automatically detect the GCE project from '
-    'metadata.')
+        --flags.DEFINE_string(
+        'tpu_zone', None,
+        '[Optional] GCE zone where the Cloud TPU is located in. If not '
+        'specified, we will attempt to automatically detect the GCE project from '
+        'metadata.')
+
+        --flags.DEFINE_string(
+        'gcp_project', None,
+        '[Optional] Project name for the Cloud TPU-enabled project. If not '
+        'specified, we will attempt to automatically detect the GCE project from '
+        'metadata.')
 
 
-Lines 488 - 501 from original run.py script:
-    if FLAGS.use_tpu:
-        if FLAGS.tpu_name:
-        cluster = tf.distribute.cluster_resolver.TPUClusterResolver(
-            FLAGS.tpu_name, zone=FLAGS.tpu_zone, project=FLAGS.gcp_project)
-        else:
-        cluster = tf.distribute.cluster_resolver.TPUClusterResolver(FLAGS.master)
-        tf.config.experimental_connect_to_cluster(cluster)
-        topology = tf.tpu.experimental.initialize_tpu_system(cluster)
-        logging.info('Topology:')
-        logging.info('num_tasks: %d', topology.num_tasks)
-        logging.info('num_tpus_per_task: %d', topology.num_tpus_per_task)
-        strategy = tf.distribute.experimental.TPUStrategy(cluster)
+    Lines 488 - 501 from original run.py script:
+        if FLAGS.use_tpu:
+            if FLAGS.tpu_name:
+            cluster = tf.distribute.cluster_resolver.TPUClusterResolver(
+                FLAGS.tpu_name, zone=FLAGS.tpu_zone, project=FLAGS.gcp_project)
+            else:
+            cluster = tf.distribute.cluster_resolver.TPUClusterResolver(FLAGS.master)
+            tf.config.experimental_connect_to_cluster(cluster)
+            topology = tf.tpu.experimental.initialize_tpu_system(cluster)
+            logging.info('Topology:')
+            logging.info('num_tasks: %d', topology.num_tasks)
+            logging.info('num_tpus_per_task: %d', topology.num_tpus_per_task)
+            strategy = tf.distribute.experimental.TPUStrategy(cluster)
+
+resnet.py:
+    def resnet Lines 702-747:
+        101: {
+          'block': BottleneckBlock,
+          'layers': [3, 4, 23, 3]
+        },
+        152: {
+            'block': BottleneckBlock,
+            'layers': [3, 8, 36, 3]
+        },
+        200: {
+            'block': BottleneckBlock,
+            'layers': [3, 24, 36, 3]
+        }
+        }
+
+    def class ResidualBlock() Lines 314-382:
+        --330 - 345
+            if FLAGS.sk_ratio > 0:  # Use ResNet-D (https://arxiv.org/abs/1812.01187)
+                if strides > 1:
+                self.shortcut_layers.append(FixedPadding(2, data_format))
+                self.shortcut_layers.append(
+                    tf.keras.layers.AveragePooling2D(
+                        pool_size=2,
+                        strides=strides,
+                        padding='SAME' if strides == 1 else 'VALID',
+                        data_format=data_format))
+                self.shortcut_layers.append(
+                    Conv2dFixedPadding(
+                        filters=filters,
+                        kernel_size=1,
+                        strides=1,
+                        data_format=data_format))
+            else:
+
+        -- 367 - 368
+            if FLAGS.se_ratio > 0:
+                self.se_layer = SE_Layer(filters, FLAGS.se_ratio, data_format=data_format)
+        
+        -- 379 - 380
+            if FLAGS.se_ratio > 0:
+                inputs = self.se_layer(inputs, training=training)
+
+
 
 

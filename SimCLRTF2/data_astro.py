@@ -66,7 +66,7 @@ def bulid_input_fn(global_batch_size, is_training):
 
 def build_distributed_dataset(batch_size, is_training, strategy):
     input_fn = bulid_input_fn(batch_size, is_training)
-    return strategy.experimental_distribute_datasets_from_function(input_fn)
+    return strategy.distribute_datasets_from_function(input_fn)
 
 def get_preprocess_fn(is_training, is_pretrain):
     #Get function that accepts an image and returns a preprocessed image
