@@ -99,13 +99,13 @@ flags.DEFINE_integer('ft_proj_selector', 0, 'Which layer of the projection head 
 
 flags.DEFINE_boolean('global_bn', True, 'Whether to aggregate BN statistics across distributed cores.')
 
-flags.DEFINE_integer('width_multiplier', 1, 'Multiplier to change width of network.')
+#flags.DEFINE_integer('width_multiplier', 1, 'Multiplier to change width of network.')
 
 flags.DEFINE_integer('resnet_depth', 50, 'Depth of ResNet.')
 
-flags.DEFINE_float('sk_ratio', 0., 'If it is bigger than 0, it will enable SK. Recommendation: 0.0625.')
+#flags.DEFINE_float('sk_ratio', 0., 'If it is bigger than 0, it will enable SK. Recommendation: 0.0625.')
 
-flags.DEFINE_float('se_ratio', 0., 'If it is bigger than 0, it will enable SE.')
+#flags.DEFINE_float('se_ratio', 0., 'If it is bigger than 0, it will enable SE.')
 
 #changed 224 (default) to 330 because our experiments
 flags.DEFINE_integer('image_size', 330, 'Input image size.')

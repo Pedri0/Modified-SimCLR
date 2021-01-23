@@ -1,8 +1,135 @@
 from absl import flags
-from tensorflow.python.keras.layers.normalization_v2 import BatchNormalization
 import tensorflow.compat.v2 as tf
 
 FLAGS = flags.FLAGS
+
+class Conv2dFixedPadding(tf.keras.layers.Layer):
+
+    def __init__(self, filters, kernel_size, strides, data_format='channel_last', **kwargs):
+        super(Conv2dFixedPadding, self).__init__(**kwargs)
+        if strides > 1:
+            self.fixed_padding = FixedPadding(kernel_size, data_format=data_format)
+        else:
+            self.fixed_padding = None
+        
+        self.conv2d = tf.keras.layers.Conv2D(filters=filters, kernel_size=kernel_size, strides=strides,
+        padding=('SAME' if strides==1 else 'VALID'), use_bias=False, kernerl_initializer = tf.keras.initializers.VarianceScaling(),
+        data_format=data_format)
+
+    def call(self, inputs, training):
+        if self.fixed_padding:
+            inputs = self.fixed_padding(inputs, training=training)
+        return self.conv2d(inputs, training=training)
+
+
+class FixedPadding(tf.keras.layers.Layer):
+
+    def __init__(self, kernel_size, data_format='channels_last', **kwargs):
+        super(FixedPadding, self).__init__(**kwargs)
+        self.kernel_size = kernel_size
+        self.data_format = data_format
+
+    def call(self, inputs, training):
+        kernel_size = self.kernel_size
+        data_format = self.data_format
+        pad_total = kernel_size -1
+        pad_beg = pad_total // 2
+        pad_end = pad_total - pad_beg
+        if data_format == 'channels_first':
+            padded_inputs = tf.pad(inputs, [[0,0], [0,0], [pad_beg, pad_end], [pad_beg, pad_end]])
+        else:
+            padded_inputs = tf.pad(inputs, [[0,0], [pad_beg, pad_end], [pad_beg, pad_end], [0,0]])
+
+        return padded_inputs
+
+
+class BatchNormRelu(tf.keras.layers.Layer):
+
+    def __init__(self, relu=True, init_zero=False, center=True, scale=True, data_format='channels_last', **kwargs):
+        super(BatchNormRelu, self).__init__(**kwargs)
+        self.relu = relu
+        if init_zero:
+            gamma_initializer = tf.zeros_initializer()
+        else:
+            gamma_initializer = tf.ones_initializer()
+        if data_format == 'channels_last':
+            axis = 1
+        else:
+            axis = -1
+        
+        if FLAGS.global_bn:
+            self.bn = tf.keras.layers.experimental.SyncBatchNormalization(
+                axis=axis, momentum=FLAGS.batch_norm_decay, epsilon=1e-5, center=center, scale=scale, gamma_initializer=gamma_initializer)
+        else:
+            self.bn = tf.keras.layers.BatchNormalization(
+                axis=axis, momentum=FLAGS.batch_norm_decay, epsilon=1e-5, center=center, scale=scale, fused=True, gamma_initializer=gamma_initializer)
+
+    def call(self, inputs, training):
+        inputs = self.bn(inputs, training=training)
+        if self.relu:
+            inputs = tf.nn.relu(inputs)
+        return inputs
+
+
+class IdentityLayer(tf.keras.layers.Layer):
+    def call(self, inputs, training):
+        return tf.identity(inputs)
+
+
+class DropBlock(tf.keras.layers.Layer):
+
+    def __init__(self, keep_prob, dropblock_size, data_format = 'channels_last', **kwargs):
+        self.keep_prob = keep_prob
+        self.dropblock_size = dropblock_size
+        self.data_format = data_format
+        super(DropBlock, self).__init__(*kwargs)
+
+    def call(self, net, training):
+        keep_prob = self.keep_prob
+        dropblock_size = self.dropblock_size
+        data_format = self.data_format
+        if not training or keep_prob is None:
+            return net
+
+        if data_format == 'channels_last':
+            _, width, height = net.get_shape().as_list()
+        else:
+            _, _, width, height = net.get_shape().as_list()
+        if width != height:
+            raise ValueError('Input tensor with width != height is not supported.')
+
+        dropblock_size = min(dropblock_size, width)
+        #seed_drop_rate is the gamma parameter of DropBlock
+        seed_drop_rate = (1.0-keep_prob) * width**2 / dropblock_size**2 / (width-dropblock_size+1)**2
+
+        #Forces the block to be inside the feature map
+        w_i, h_i = tf.meshgrid(tf.range(width), tf.range(width))
+        valid_block_center = tf.logical_and(
+            tf.logical_and(w_i>=int(dropblock_size//2), w_i < width - (dropblock_size-1) // 2),
+            tf.logical_and(h_i>=int(dropblock_size//2), h_i < width - (dropblock_size-1) // 2))
+        
+        valid_block_center = tf.expand_dims(valid_block_center, 0)
+        valid_block_center = tf.expand_dims(valid_block_center, -1 if data_format=='channels_last' else 0)
+
+        randnoise = tf.random_uniform(net.shape, dtype=tf.float32)
+        block_pattern = (1 - tf.cast(valid_block_center, dtype=tf.float32) + tf.cast((1 - seed_drop_rate), dtype=tf.float32)+randnoise) >=1
+        block_pattern = tf.cast(block_pattern, dtype=tf.float32)
+
+        if dropblock_size == width:
+            block_pattern = tf.reduce_min(block_pattern, axis=[1,2] if data_format=='channels_last' else [2,3], keepdims=True)
+        else:
+            if data_format == 'channels_last':
+                ksize = [1, dropblock_size, dropblock_size, 1]
+            else:
+                ksize = [1, 1, dropblock_size, dropblock_size]
+            block_pattern = -tf.nn.max_pool(-block_pattern, ksize=ksize, strides=[1,1,1,1], padding='SAME', 
+            data_format='NHWC' if data_format == 'channels_last' else 'NCHW')
+        
+        percent_ones = (tf.cast(tf.reduce_sum((block_pattern)), tf.float32) / tf.cast(tf.size(block_pattern), tf.float32))
+
+        net = net / tf.cast(percent_ones, net.dtype) * tf.cast(block_pattern, net.dtype)
+        return net
+
 
 class ResidualBlock(tf.keras.layers.Layer):
 
@@ -33,7 +160,132 @@ class ResidualBlock(tf.keras.layers.Layer):
         return tf.nn.relu(inputs + shortcut) 
 
 
+class BottleneckBlock(tf.keras.layers.Layer):
 
+    def __init__(self, filters, strides, use_projection=False, data_format='channels_last', dropblock_keep_prob=None,dropblock_size=None,**kwargs):
+        super(BottleneckBlock, self).__init__(**kwargs)
+        self.proyection_layers = []
+        if use_projection:
+            filters_out = 4 * filters
+            self.proyection_layers.append(Conv2dFixedPadding(filters=filters_out, kernel_size=1, strides=strides, data_format=data_format))
+            self.proyection_layers.append(BatchNormRelu(relu=False,data_format=data_format))
+        self.shortcut_dropblock = DropBlock(data_format=data_format, keep_prob=dropblock_keep_prob, dropblock_size=dropblock_size)
+        self.conv_relu_dropblock_layers = []
+
+        self.conv_relu_dropblock_layers.append(Conv2dFixedPadding(filters=filters, kernel_size=1, strides=1, data_format=data_format))
+        self.conv_relu_dropblock_layers.append(BatchNormRelu(data_format=data_format))
+        self.conv_relu_dropblock_layers.append(DropBlock(data_format=data_format, keep_prob=dropblock_keep_prob, dropblock_size=dropblock_size))
+
+        self.conv_relu_dropblock_layers.append(Conv2dFixedPadding(filters=filters, kernel_size=3, strides=strides, data_format=data_format))
+        self.conv_relu_dropblock_layers.append(BatchNormRelu(data_format=data_format))
+        self.conv_relu_dropblock_layers.append(DropBlock(data_format=data_format, keep_prob=dropblock_keep_prob, dropblock_size=dropblock_size))
+
+        self.conv_relu_dropblock_layers.append(Conv2dFixedPadding(filters=4*filters, kernel_size=1, strides=1, data_format=data_format))
+        self.conv_relu_dropblock_layers.appen(BatchNormRelu(relu=False, init_zero=True, data_format=data_format))
+        self.conv_relu_dropblock_layers.append(DropBlock(data_format=data_format, keep_prob=dropblock_keep_prob,dropblock_size=dropblock_size))
+
+    def call(self, inputs, training):
+        shortcut = inputs
+        for layer in self.proyection_layers:
+            shortcut = layer(shortcut, training=training)
+        shortcut = self.shortcut_dropblock(shortcut, training=training)
+
+        for layer in self.conv_relu_dropblock_layers:
+            inputs = layer(inputs, training = training)
+
+        return tf.nn.relu(inputs + shortcut)
+
+
+class BlockGroup(tf.keras.layers.Layer):
+
+    def __init__(self, filters, block_fn, blocks, strides, data_format='channels_last', dropblock_keep_prob=None, dropblock_size=None, **kwargs):
+        self._name = kwargs.get('name')
+        super(BlockGroup, self).__init__(**kwargs)
+
+        self.layers = []
+        self.layers.append(block_fn(filters, strides, use_projection=True, data_format=data_format,
+        dropblock_keep_prob=dropblock_keep_prob, dropblock_size=dropblock_size))
+
+        for _ in range(1, blocks):
+            self.layers.append(block_fn(filters, 1, data_format=data_format, dropblock_keep_prob=dropblock_keep_prob, dropblock_size=dropblock_size))
+
+    def call(self, inputs, training):
+        for layer in self.layers:
+            inputs = layer(inputs, training=training)
+        return tf.identity(inputs, self._name)
+
+
+class Resnet(tf.keras.layers.Layer):
+    
+    def __init__(self, block_fn, layers, cifar_stem=False, data_format='channels_last', dropblock_keep_probs=None, dropblock_size=None, **kwargs):
+        super(Resnet, self).__init__(**kwargs)
+        self.data_format = data_format
+        if dropblock_keep_probs is None:
+            dropblock_keep_probs = [None] * 4
+        if not isinstance(dropblock_keep_probs, list) or len(dropblock_keep_probs) != 4:
+            raise ValueError('drop_block_keep_probs is not valid:', dropblock_keep_probs)
+
+        trainable = (FLAGS.train_mode != 'finetune' or FLAGS.fine_tune_after_block == -1)
+        self.initial_conv_relu_max_pool = []
+        if cifar_stem:
+            self.initial_conv_relu_max_pool.append(Conv2dFixedPadding(filters=64, kernel_size=3, strides=1, data_format=data_format, trainable=trainable))
+            self.initial_conv_relu_max_pool.append(IdentityLayer(name='initial_conv', trainable=trainable))
+            self.initial_conv_relu_max_pool.append(BatchNormRelu(data_format=data_format, trainable=trainable))
+            self.initial_conv_relu_max_pool.append(IdentityLayer(name='initial_max_pool', trainable=trainable))
+        else:
+            self.initial_conv_relu_max_pool.append(Conv2dFixedPadding(filters=64, kernel_size=7, strides=2, data_format=data_format, trainable=trainable))
+            self.initial_conv_relu_max_pool.append(IdentityLayer(name='initial_conv', trainable=trainable))
+            self.initial_conv_relu_max_pool.append(BatchNormRelu(data_format=data_format, trainable=trainable))
+            self.initial_conv_relu_max_pool.append(tf.keras.layers.MaxPooling2D(pool_size=3, strides=2, padding='SAME', data_format=data_format, trainable=trainable))
+            self.initial_conv_relu_max_pool.append(IdentityLayer(name='initial_max_pool', trainable=trainable))
+
+        self.block_groups = []
+        if FLAGS.train_mode == 'finetune' and FLAGS.fine_tune_after_block == 0:
+            trainable = True
+        
+        #first block
+        self.block_groups.append(BlockGroup(filters=64, block_fn=block_fn, blocks=layers[0], strides=1,
+        name='block_group1', data_format=data_format, dropblock_keep_prob=dropblock_keep_probs[0], dropblock_size=dropblock_size, trainable=trainable))
+
+        #frezee or unfrezee block if finetuning
+        if FLAGS.train_mode == 'finetune' and FLAGS.fine_tune_after_block == 1:
+            trainable = True
+
+        #second block
+        self.block_groups.append(BlockGroup(filters=128, block_fn=block_fn, blocks=layers[1], strides=2,
+        name='block_group2', data_format=data_format, dropblock_keep_prob=dropblock_keep_probs[1], dropblock_size=dropblock_size, trainable=trainable))
+
+        if FLAGS.train_mode == 'finetune' and FLAGS.fine_tune_after_block == 2:
+            trainable = True
+        
+        #third block
+        self.block_groups.append(BlockGroup(filters=256, block_fn=block_fn, blocks=layers[2], strides=2,
+        name='block_group3', data_format=data_format, dropblock_keep_prob=dropblock_keep_probs[2], dropblock_size=dropblock_size, trainable=trainable))
+
+        if FLAGS.train_mode == 'finetune' and FLAGS.fine_tune_after_block == 3:
+            trainable = True
+        
+        #fourth block
+        self.block_groups.append(BlockGroup(filters=512, block_fn=block_fn, blocks=layers[3], strides=2,
+        name='block_group4', data_format=data_format, dropblock_keep_prob=dropblock_keep_probs[3], dropblock_size=dropblock_size, trainable=trainable))
+
+    def call(self,inputs, training):
+        for layer in self.initial_conv_relu_max_pool:
+            inputs = layer(inputs, training=training)
+
+        for i, layer in enumerate(self.block_groups):
+            if FLAGS.train_mode == 'finetune' and FLAGS.fine_tune_after_block == i:
+                inputs = tf.stop_gradient(inputs)
+            inputs = layer(inputs, training=training)
+        if FLAGS.train_mode == 'finetune' and FLAGS.fine_tune_after_block == 4:
+            inputs = tf.stop_gradient(inputs)
+        if self.data_format == 'channels_last':
+            inputs = tf.reduce_mean(inputs, [1, 2])
+        else:
+            inputs = tf.reduce_mean(inputs, [2, 3])
+        
+        inputs = tf.identity(inputs, 'final_avg_pool')
+        return inputs
 
 
 def resnet(resnet_depth, cifar_stem=False, data_format='channels_last', dropblock_kep_probs=None, dropblock_size=None):
@@ -47,5 +299,5 @@ def resnet(resnet_depth, cifar_stem=False, data_format='channels_last', dropbloc
         raise ValueError('Not implemented resnet_depth:', resnet_depth)
 
     params = model_params[resnet_depth]
-    return Resnet(params['block'], params['layers'], width_multiplier, cifar_stem=cifar_stem, dropblock_kep_probs = dropblock_kep_probs,
+    return Resnet(params['block'], params['layers'], cifar_stem=cifar_stem, dropblock_kep_probs = dropblock_kep_probs,
     dropblock_size=dropblock_size, data_format=data_format)

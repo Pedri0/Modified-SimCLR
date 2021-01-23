@@ -97,6 +97,78 @@ resnet.py:
             if FLAGS.se_ratio > 0:
                 inputs = self.se_layer(inputs, training=training)
 
+    def class BottleneckBlock() Lines 385-487
+        -- 400 - 414
+            if FLAGS.sk_ratio > 0:  # Use ResNet-D (https://arxiv.org/abs/1812.01187)
+                if strides > 1:
+                self.projection_layers.append(FixedPadding(2, data_format))
+                self.projection_layers.append(
+                    tf.keras.layers.AveragePooling2D(
+                        pool_size=2,
+                        strides=strides,
+                        padding='SAME' if strides == 1 else 'VALID',
+                        data_format=data_format))
+                self.projection_layers.append(
+                    Conv2dFixedPadding(
+                        filters=filters_out,
+                        kernel_size=1,
+                        strides=1,
+                        data_format=data_format))
+        
+        -- 442 - 445
+            if FLAGS.sk_ratio > 0:
+                self.conv_relu_dropblock_layers.append(
+                    SK_Conv2D(filters, strides, FLAGS.sk_ratio, data_format=data_format))
+            else:
+
+        -- 474-476
+            if FLAGS.se_ratio > 0:
+                self.conv_relu_dropblock_layers.append(
+            SE_Layer(filters, FLAGS.se_ratio, data_format=data_format))
+    
+    def class DropBlock() Lines 81 - 157
+
+        -- 100 - 102
+            tf.logging.info(
+                'Applying DropBlock: dropblock_size {}, net.shape {}'.format(
+                 dropblock_size, net.shape))
+
+    def class Resnet () Lines 529 - 699
+
+        -- 566 - 592
+            if FLAGS.sk_ratio > 0:  # Use ResNet-D (https://arxiv.org/abs/1812.01187)
+            self.initial_conv_relu_max_pool.append(
+                Conv2dFixedPadding(
+                    filters=64 * width_multiplier // 2,
+                    kernel_size=3,
+                    strides=2,
+                    data_format=data_format,
+                    trainable=trainable))
+            self.initial_conv_relu_max_pool.append(
+                BatchNormRelu(data_format=data_format, trainable=trainable))
+            self.initial_conv_relu_max_pool.append(
+                Conv2dFixedPadding(
+                    filters=64 * width_multiplier // 2,
+                    kernel_size=3,
+                    strides=1,
+                    data_format=data_format,
+                    trainable=trainable))
+            self.initial_conv_relu_max_pool.append(
+                BatchNormRelu(data_format=data_format, trainable=trainable))
+            self.initial_conv_relu_max_pool.append(
+                Conv2dFixedPadding(
+                    filters=64 * width_multiplier,
+                    kernel_size=3,
+                    strides=1,
+                    data_format=data_format,
+                    trainable=trainable))
+            else:
+
+        -- 679 - 681:
+            if FLAGS.train_mode == 'finetune' and FLAGS.fine_tune_after_block == 4:
+            # This case doesn't really matter.
+            trainable = True
+
 
 
 
