@@ -23,6 +23,8 @@ def build_optimizer(learning_rate):
     elif FLAGS.optimizer == 'lamb':
         return  tfa.optimizers.LAMB(learning_rate, beta1=0.9, beta2=0.999, epsilon=1e-06,
             weight_decay_rate=FLAGS.weight_decay, exclude_from_weight_decay=['batch_normalization', 'bias', 'head_supervised'])
+    else:
+        raise ValueError('Unknown optimizer {}'.format(FLAGS.optimizer))
 
 
 def add_weight_decay(model, adjust_per_optimizer=True):
