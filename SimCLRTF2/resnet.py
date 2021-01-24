@@ -13,7 +13,7 @@ class Conv2dFixedPadding(tf.keras.layers.Layer):
             self.fixed_padding = None
         
         self.conv2d = tf.keras.layers.Conv2D(filters=filters, kernel_size=kernel_size, strides=strides,
-        padding=('SAME' if strides==1 else 'VALID'), use_bias=False, kernerl_initializer = tf.keras.initializers.VarianceScaling(),
+        padding=('SAME' if strides==1 else 'VALID'), use_bias=False, kernel_initializer = tf.keras.initializers.VarianceScaling(),
         data_format=data_format)
 
     def call(self, inputs, training):
@@ -133,9 +133,9 @@ class DropBlock(tf.keras.layers.Layer):
 
 class ResidualBlock(tf.keras.layers.Layer):
 
-    def __init__(self, filters, strides, use_projection=False, data_format='channels_last', dropblock_kep_prob=None, dropblock_size=None, **kwargs):
+    def __init__(self, filters, strides, use_projection=False, data_format='channels_last', dropblock_keep_prob=None, dropblock_size=None, **kwargs):
         super(ResidualBlock, self).__init__(**kwargs)
-        del dropblock_kep_prob
+        del dropblock_keep_prob
         del dropblock_size
         self.conv2d_bn_layers = []
         self.shortcut_layers = []
@@ -288,7 +288,7 @@ class Resnet(tf.keras.layers.Layer):
         return inputs
 
 
-def resnet(resnet_depth, cifar_stem=False, data_format='channels_last', dropblock_kep_probs=None, dropblock_size=None):
+def resnet(resnet_depth, cifar_stem=False, data_format='channels_last', dropblock_keep_probs=None, dropblock_size=None):
     model_params = {
         18: {'block': ResidualBlock, 'layers': [2, 2, 2, 2]},
         34: {'block': ResidualBlock, 'layers': [3, 4, 6, 3]},
@@ -299,5 +299,5 @@ def resnet(resnet_depth, cifar_stem=False, data_format='channels_last', dropbloc
         raise ValueError('Not implemented resnet_depth:', resnet_depth)
 
     params = model_params[resnet_depth]
-    return Resnet(params['block'], params['layers'], cifar_stem=cifar_stem, dropblock_kep_probs = dropblock_kep_probs,
+    return Resnet(params['block'], params['layers'], cifar_stem=cifar_stem, dropblock_keep_probs = dropblock_keep_probs,
     dropblock_size=dropblock_size, data_format=data_format)

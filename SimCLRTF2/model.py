@@ -21,7 +21,7 @@ def build_optimizer(learning_rate):
         return lars_optimizer.LARSOptimizer(learning_rate, momentum=FLAGS.momentum, weigth_decay=FLAGS.weight_decay,
             exclude_from_weight_decay=['batch_normalization', 'bias', 'head_supervised'])
     elif FLAGS.optimizer == 'lamb':
-        return  tfa.optimizers.LAMB(learning_rate, beta1=0.9, beta2=0.999, epsilon=1e-06,
+        return  tfa.optimizers.LAMB(learning_rate, beta_1=0.9, beta_2=0.999, epsilon=1e-06,
             weight_decay_rate=FLAGS.weight_decay, exclude_from_weight_decay=['batch_normalization', 'bias', 'head_supervised'])
     else:
         raise ValueError('Unknown optimizer {}'.format(FLAGS.optimizer))
@@ -48,10 +48,10 @@ def get_train_steps(num_examples):
     return FLAGS.train_steps or (num_examples * FLAGS.train_epochs // FLAGS.train_batch_size + 1)
 
 
-class WarmUpCosineDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
+class WarmUpAndCosineDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
     # Applies a warmup schedule on a given learning rate decay schedule
     def __init__(self, base_learning_rate, num_examples, name=None):
-        super(WarmUpCosineDecay,self).__init__()
+        super(WarmUpAndCosineDecay,self).__init__()
         self.base_learning_rate = base_learning_rate
         self.num_examples = num_examples
         self._name = name
@@ -154,10 +154,15 @@ class ProjectionHead(tf.keras.layers.Layer):
         else:
             raise ValueError('Unknown head projection mode {}'. format(FLAGS.proj_head_mode))
 
+        #The first element is the output of the projection head.
+        #The second element is the input of the finetune head
+        proj_head_output = tf.identity(hiddens_list[-1], 'proj_head_output')
+        return proj_head_output, hiddens_list[FLAGS.ft_proj_selector]
+
 
 class SupervisedHead(tf.keras.layers.Layer):
     def __init__(self, num_classes, name='head_supervised', **kwargs):
-        super(SupervisedHead, self).__init__(**kwargs)
+        super(SupervisedHead, self).__init__(name=name, **kwargs)
         self.linear_layer = LinearLayer(num_classes)
 
     def call(self, inputs, training):
@@ -174,7 +179,7 @@ class Model(tf.keras.models.Model):
         self.resnet_model = resnet.resnet(resnet_depth=FLAGS.resnet_depth, cifar_stem=FLAGS.image_size <=32)
         self._projection_head = ProjectionHead()
         if FLAGS.train_mode == 'finetune':
-            self.supervised_head = SupervisedHead()
+            self.supervised_head = SupervisedHead(num_classes)
     
     def __call__(self, inputs, training):
         features = inputs
@@ -186,7 +191,7 @@ class Model(tf.keras.models.Model):
             num_transforms = 1
         
         #split channels and optionally apply extra batched augmentation
-        features_list = tf.split(features, num_or_size_inputs=num_transforms, axis=-1)
+        features_list = tf.split(features, num_or_size_splits=num_transforms, axis=-1)
         if FLAGS.use_blur and training and FLAGS.train_mode == 'pretrain':
             features_list = data_util.batch_random_blur(features_list, FLAGS.image_size, FLAGS.image_size)
         features = tf.concat(features_list, 0) #(num_transforms * bsz, h, w, c)
