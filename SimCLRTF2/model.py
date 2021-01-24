@@ -18,7 +18,7 @@ def build_optimizer(learning_rate):
     elif FLAGS.optimizer == 'adam':
         return tf.keras.optimizers.Adam(learning_rate)
     elif FLAGS.optimizer == 'lars':
-        return lars_optimizer.LARSOptimizer(learning_rate, momentum=FLAGS.momentum, weigth_decay=FLAGS.weight_decay,
+        return lars_optimizer.LARSOptimizer(learning_rate, momentum=FLAGS.momentum, weight_decay=FLAGS.weight_decay,
             exclude_from_weight_decay=['batch_normalization', 'bias', 'head_supervised'])
     elif FLAGS.optimizer == 'lamb':
         return  tfa.optimizers.LAMB(learning_rate, beta_1=0.9, beta_2=0.999, epsilon=1e-06,
