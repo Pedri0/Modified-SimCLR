@@ -170,5 +170,18 @@ resnet.py:
             trainable = True
 
 
+model.py
+
+    class Model Lines 229-280:
+        -- 272 - 278:
+            elif FLAGS.train_mode == 'pretrain' and FLAGS.lineareval_while_pretraining:
+        # When performing pretraining and linear evaluation together we do not
+        # want information from linear eval flowing back into pretraining network
+        # so we put a stop_gradient.
+        supervised_head_outputs = self.supervised_head(
+            tf.stop_gradient(supervised_head_inputs), training)
+        return projection_head_outputs, supervised_head_outputs   
+
+
 
 

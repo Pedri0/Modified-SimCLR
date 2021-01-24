@@ -59,7 +59,7 @@ flags.DEFINE_enum('train_mode', 'pretrain', ['pretrain', 'finetune'],
     'The train mode controls different objectives and trainable components.')
 
 #changed True (default) to False
-flags.DEFINE_bool('lineareval_while_pretraining', False, 'Whether to finetune supervised head while pretraining.')
+#flags.DEFINE_bool('lineareval_while_pretraining', False, 'Whether to finetune supervised head while pretraining.')
 
 flags.DEFINE_string('checkpoint', None, 'Loading from the given checkpoint for fine-tuning if a finetuning checkpoint does not already exist in model_dir.')
 
@@ -73,7 +73,7 @@ flags.DEFINE_string('model_dir', None, 'Model directory for training.')
 
 flags.DEFINE_string('data_dir', None, 'Directory where dataset is stored.')
 
-flags.DEFINE_enum('optimizer', 'lars', ['momentum', 'adam', 'lars'], 'Optimizer to use.')
+flags.DEFINE_enum('optimizer', 'lars', ['momentum', 'adam', 'lars', 'lamb'], 'Optimizer to use.')
 
 flags.DEFINE_float('momentum', 0.9, 'Momentum parameter.')
 
@@ -183,7 +183,7 @@ def json_serializable(val):
 
 def perform_evaluation(model, builder, eval_steps, ckpt, strategy, topology):
     #perform evaluation
-    if FLAGS.train_mode == 'pretrain' and not FLAGS.lineareval_while_pretraining:
+    if FLAGS.train_mode == 'pretrain': #and not FLAGS.lineareval_while_pretraining:
         logging.info('Skipping eval during pretraining without linear eval.')
         return
 
@@ -364,7 +364,7 @@ def main(argv):
                 contrast_acc_metric = tf.keras.metrics.Mean('train/contrast_acc')
                 contrast_entropy_metric = tf.keras.metrics.Mean('train/contrast_entropy')
                 all_metrics.extend([contrast_loss_metric, contrast_acc_metric, contrast_entropy_metric])
-            if FLAGS.train_mode == 'finetune' or FLAGS.lineareval_while_pretraining:
+            if FLAGS.train_mode == 'finetune': #or FLAGS.lineareval_while_pretraining:
                 supervised_loss_metric = tf.keras.metrics.Mean('train/supervised_loss')
                 supervised_acc_metric = tf.keras.metrics.Mean('train/supervised_acc')
                 all_metrics.extend([supervised_loss_metric, supervised_acc_metric])
@@ -406,8 +406,8 @@ def main(argv):
                 if supervised_head_outputs is not None:
                     outputs = supervised_head_outputs
                     l = labels['labels']
-                    if FLAGS.train_mode == 'pretrain' and FLAGS.lineareval_while_pretraining:
-                        l = tf.concat([l,l], 0)
+                    #if FLAGS.train_mode == 'pretrain' and FLAGS.lineareval_while_pretraining:
+                    #    l = tf.concat([l,l], 0)
                     sup_loss = obj_lib.add_supervised_loss(labels=l, logits=outputs)
                     if loss is None:
                         loss = sup_loss
