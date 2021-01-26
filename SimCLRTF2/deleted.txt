@@ -180,7 +180,39 @@ model.py
         # so we put a stop_gradient.
         supervised_head_outputs = self.supervised_head(
             tf.stop_gradient(supervised_head_inputs), training)
-        return projection_head_outputs, supervised_head_outputs   
+        return projection_head_outputs, supervised_head_outputs
+
+
+data_util.py
+
+    def centercrop() Lines 221-246
+        -- 233 - 241
+        shape = tf.shape(image)
+        image_height = shape[0]
+        image_width = shape[1]
+        crop_height, crop_width = _compute_crop_shape(
+            image_height, image_width, height / width, crop_proportion)
+        offset_height = ((image_height - crop_height) + 1) // 2
+        offset_width = ((image_width - crop_width) + 1) // 2
+        image = tf.image.crop_to_bounding_box(
+            image, offset_height, offset_width, crop_height, crop_width)
+
+    def _compute_crop_shape Lines 179 - 218
+        All function was removed
+
+    def random_crop_with_resize Lines 367 - 382
+        All function was removed
+
+    def crop_and_resize 301 - 322
+        All function was removed
+
+    def distorted_bounding_ box_ crop() 249 - 298
+        All function was removed. Used only in crop_and_resize
+
+    def color_jitter Lines 56 - 78
+        else:
+            return color_jitter_nonrand(
+            image, brightness, contrast, saturation, hue, impl=impl)
 
 
 
