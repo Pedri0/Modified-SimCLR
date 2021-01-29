@@ -1,5 +1,4 @@
 import math
-from os import name
 import tensorflow.compat.v2 as tf
 import tensorflow_addons as tfa
 from absl import flags
@@ -208,3 +207,5 @@ class Model(tf.keras.models.Model):
         
         else:
             return projection_head_outputs, None
+
+#TODO separ model en pretrain, fine, eval tambien en todos los scripts

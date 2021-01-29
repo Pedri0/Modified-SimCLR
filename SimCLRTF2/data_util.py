@@ -88,7 +88,7 @@ def random_apply(func, p, x):
 def random_color_jitter(image, p=1.0, impl='simclrv2'):
 
     def _transform(image):
-        color_jitter_t = functools.partial(color_jitter, strenght=FLAGS.color_jitter_strength, impl=impl)
+        color_jitter_t = functools.partial(color_jitter, strength=FLAGS.color_jitter_strength, impl=impl)
         image = random_apply(color_jitter_t, p=0.8, x=image)
         return random_apply(to_grayscale, p=0.2, x=image)
     
