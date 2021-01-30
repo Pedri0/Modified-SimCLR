@@ -5,7 +5,7 @@ import tensorflow.compat.v2 as tf
 import tensorflow_datasets as tfds
 import pandas as pd
 import data_tfds_pretrain as data_lib
-import model_pretrain as model_lib
+import model as model_lib
 
 ######new .py's #####
 import restore_checkpoint
@@ -53,7 +53,7 @@ flags.DEFINE_enum('train_mode', 'pretrain', ['pretrain', 'finetune'],
     'The train mode controls different objectives and trainable components.')
 
 #changed True (default) to False
-#flags.DEFINE_bool('lineareval_while_pretraining', False, 'Whether to finetune supervised head while pretraining.')
+flags.DEFINE_bool('lineareval_while_pretraining', False, 'Whether to finetune supervised head while pretraining.')
 
 flags.DEFINE_string('checkpoint', None, 'Loading from the given checkpoint for fine-tuning if a finetuning checkpoint does not already exist in model_dir.')
 
@@ -93,13 +93,13 @@ flags.DEFINE_integer('ft_proj_selector', 0, 'Which layer of the projection head 
 
 flags.DEFINE_boolean('global_bn', True, 'Whether to aggregate BN statistics across distributed cores.')
 
-#flags.DEFINE_integer('width_multiplier', 1, 'Multiplier to change width of network.')
+flags.DEFINE_integer('width_multiplier', 1, 'Multiplier to change width of network.')
 
 flags.DEFINE_integer('resnet_depth', 50, 'Depth of ResNet.')
 
-#flags.DEFINE_float('sk_ratio', 0., 'If it is bigger than 0, it will enable SK. Recommendation: 0.0625.')
+flags.DEFINE_float('sk_ratio', 0., 'If it is bigger than 0, it will enable SK. Recommendation: 0.0625.')
 
-#flags.DEFINE_float('se_ratio', 0., 'If it is bigger than 0, it will enable SE.')
+flags.DEFINE_float('se_ratio', 0., 'If it is bigger than 0, it will enable SE.')
 
 #changed 224 (default) to 330 because our experiments
 flags.DEFINE_integer('image_size', 330, 'Input image size.')
@@ -127,64 +127,70 @@ def main(argv):
 
     checkpoint_steps = (FLAGS.checkpoint_steps or (FLAGS.checkpoint_epochs * epoch_steps))
     
+    strategy = tf.distribute.MirroredStrategy()
+    logging.info('Running using MirroredStrategy on %d replicas', strategy.num_replicas_in_sync)
+
     #instanciating model
-    model = model_lib.Model(num_classes)
+    with strategy.scope():
+        model = model_lib.Model(num_classes)
 
-    #build input pipeline
-    ds = data_lib.build_input_fn(builder, FLAGS.train_batch_size)
-    
-    #Build LR schedule and optimizer
-    learning_rate = model_lib.WarmUpAndCosineDecay(FLAGS.learning_rate, num_train_examples)
-    optimizer = model_lib.build_optimizer(learning_rate)
+        #build input pipeline
+        ds = data_lib.build_distributed_dataset(builder, FLAGS.train_batch_size,strategy)
+        
+        #Build LR schedule and optimizer
+        learning_rate = model_lib.WarmUpAndCosineDecay(FLAGS.learning_rate, num_train_examples)
+        optimizer = model_lib.build_optimizer(learning_rate)
 
-    #Build Metrics for pretrain
-    all_metrics = []
-    weight_decay_metric = tf.keras.metrics.Mean('train/weight_decay')
-    total_loss_metric = tf.keras.metrics.Mean('train/total_loss')
-    contrast_loss_metric = tf.keras.metrics.Mean('train/contrast_loss')
-    contrast_acc_metric = tf.keras.metrics.Mean('train/contrast_acc')
-    contrast_entropy_metric = tf.keras.metrics.Mean('train/contrast_entropy')
-    all_metrics.extend([weight_decay_metric, total_loss_metric,
-        contrast_loss_metric, contrast_acc_metric, contrast_entropy_metric])
+        #Build Metrics for pretrain
+        all_metrics = []
+        weight_decay_metric = tf.keras.metrics.Mean('train/weight_decay')
+        total_loss_metric = tf.keras.metrics.Mean('train/total_loss')
+        contrast_loss_metric = tf.keras.metrics.Mean('train/contrast_loss')
+        contrast_acc_metric = tf.keras.metrics.Mean('train/contrast_acc')
+        contrast_entropy_metric = tf.keras.metrics.Mean('train/contrast_entropy')
+        all_metrics.extend([weight_decay_metric, total_loss_metric,
+            contrast_loss_metric, contrast_acc_metric, contrast_entropy_metric])
 
-    #Restore checkpoint if avalaible
-    checkpoint_manager = restore_checkpoint.try_restore_from_checkpoint(model, optimizer.iterations, optimizer)
+        #Restore checkpoint if avalaible
+        checkpoint_manager = restore_checkpoint.try_restore_from_checkpoint(model, optimizer.iterations, optimizer)
 
-    @tf.function
-    def train_multiple_steps(iterator):
-        # `tf.range` is needed so that this runs in a `tf.while_loop` and is not unrolled
-        for _ in tf.range(checkpoint_steps):
-            with tf.name_scope(''):
-                images, labels = next(iterator)
-                features, labels = images, {'labels': labels}
-                single_step(features, model,optimizer, contrast_loss_metric, contrast_acc_metric,
-                    contrast_entropy_metric, weight_decay_metric, total_loss_metric)
-    
-    global_step = optimizer.iterations
-    cur_step = global_step.numpy()
-    iterator = iter(ds)
-
-    while cur_step < train_steps:        
-        train_multiple_steps(iterator)
+        @tf.function
+        def train_multiple_steps(iterator):
+            # `tf.range` is needed so that this runs in a `tf.while_loop` and is not unrolled
+            for _ in tf.range(checkpoint_steps):
+                with tf.name_scope(''):
+                    images, labels = next(iterator)
+                    features, labels = images, {'labels': labels}
+                    strategy.run(single_step, (features, model,optimizer, contrast_loss_metric, contrast_acc_metric,
+                        contrast_entropy_metric, weight_decay_metric, total_loss_metric))
+        global_step = optimizer.iterations
         cur_step = global_step.numpy()
-        checkpoint_manager.save(cur_step)
-        logging.info('Completed: %d / %d steps', cur_step, train_steps)
-        for metric in all_metrics:
-            metric.reset_states()
-    
-    logging.info('Training complete :)')
-    df = pd.DataFrame(all_metrics)
-    df.to_csv('all_metrics.csv', index=False)
+        iterator = iter(ds)
+
+        while cur_step < train_steps:        
+            train_multiple_steps(iterator)
+            cur_step = global_step.numpy()
+            checkpoint_manager.save(cur_step)
+            logging.info('Completed: %d / %d steps', cur_step, train_steps)
+            for metric in all_metrics:
+                metric.reset_states()
+        
+        logging.info('Training complete :)')
+        df = pd.DataFrame(all_metrics)
+        df.to_csv('all_metrics.csv', index=False)
 
 
-@tf.function
+####################Nota: si entrena, guarda y carga los pesos (de 1 epoca al parece), entrena con los otros archivos de simclr sin modificar. para ello tuve que ponerle
+#el dummy _ al single step, hay que revisar como guardar el valor de las metricas o en su caso usar el summarywriter
+
+
+
 def single_step(features, model, optimizer, contrast_loss_metric, contrast_acc_metric,
                     contrast_entropy_metric, weight_decay_metric, total_loss_metric):
 
     with tf.GradientTape() as tape:
-        projection_head_outputs = model(features, training = True)
-        con_loss, logits_con, labels_con = contrastive_loss(
-            projection_head_outputs, hidden_norm=FLAGS.hidden_norm, temperature=FLAGS.temperature)
+        projection_head_outputs, _ = model(features, training = True)
+        con_loss, logits_con, labels_con = contrastive_loss(projection_head_outputs, hidden_norm=FLAGS.hidden_norm, temperature=FLAGS.temperature)
 
         ############update metrics#######################
         contrast_loss_metric.update_state(con_loss)
