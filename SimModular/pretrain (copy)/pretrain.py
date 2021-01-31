@@ -4,120 +4,61 @@ from absl import logging
 import tensorflow.compat.v2 as tf
 import tensorflow_datasets as tfds
 import pandas as pd
-import data_tfds_pretrain as data_lib
-import model as model_lib
 
-######new .py's #####
+import data_tfds_pretrain as data_lib
+import model_pretrain as model_lib
 import restore_checkpoint
 
 
 FLAGS = flags.FLAGS
-##########################Flags##################################
-flags.DEFINE_float('learning_rate', 0.3, 'Initial learning rate per batch size of 256.')
+########################## Flags ##################################
 
-#changed linear (default) to sqrt because our batch_size is not to big (16) 
-flags.DEFINE_enum('learning_rate_scaling', 'sqrt', ['linear', 'sqrt'], 'How to scale the learning rate as a function of batch size.')
-
-flags.DEFINE_float('warmup_epochs', 10, 'Number of epochs of warmup.')
-
-flags.DEFINE_float('weight_decay', 1e-6, 'Amount of weight decay to use.')
-
-flags.DEFINE_float('batch_norm_decay', 0.9, 'Batch norm decay parameter.')
-
-#changed 512 (default) to 16 because our hardware
-flags.DEFINE_integer('train_batch_size', 16, 'Batch size for training.')
-
-flags.DEFINE_string('train_split', 'train', 'Split for training.')
-
-flags.DEFINE_integer('train_epochs', 100, 'Number of epochs to train for.')
-
-flags.DEFINE_integer('train_steps', 0, 'Number of steps to train for. If provided, overrides train_epochs.')
-
-flags.DEFINE_integer('eval_steps', 0, 'Number of steps to eval for. If not provided, evals over entire dataset.')
-
-flags.DEFINE_integer('eval_batch_size', 256, 'Batch size for eval.')
-
-flags.DEFINE_integer('checkpoint_epochs', 1, 'Number of epochs between checkpoints/summaries.')
-
-flags.DEFINE_integer('checkpoint_steps', 0, 'Number of steps between checkpoints/summaries. If provided, overrides checkpoint_epochs.')
-
-flags.DEFINE_string('eval_split', 'validation', 'Split for evaluation.')
-
-#changed 'imagenet2012' (default) to 'astro' because we'll not use imagenet2012 but its supported
-flags.DEFINE_string('dataset', 'astro', 'Name of a dataset.')
-
-flags.DEFINE_enum('mode', 'train', ['train', 'eval', 'train_then_eval'],
-    'Whether to perform training or evaluation.')
-
-flags.DEFINE_enum('train_mode', 'pretrain', ['pretrain', 'finetune'],
-    'The train mode controls different objectives and trainable components.')
-
-#changed True (default) to False
-flags.DEFINE_bool('lineareval_while_pretraining', False, 'Whether to finetune supervised head while pretraining.')
-
+############ Used in restore_checkpoint
+flags.DEFINE_string('model_dir', None, 'Model directory for training.')
+#changed 5 (default) to 20 just for safe
+flags.DEFINE_integer('keep_checkpoint_max', 20, 'Maximum number of checkpoints to keep.')
 flags.DEFINE_string('checkpoint', None, 'Loading from the given checkpoint for fine-tuning if a finetuning checkpoint does not already exist in model_dir.')
-
 flags.DEFINE_bool('zero_init_logits_layer', False, 'If True, zero initialize layers after avg_pool for supervised learning.')
 
-flags.DEFINE_integer('fine_tune_after_block', -1, 'The layers after which block that we will fine-tune. -1 means fine-tuning'
-    'everything. 0 means fine-tuning after stem block. 4 means fine-tuning '
-    'just the linear head.')
-
-flags.DEFINE_string('model_dir', None, 'Model directory for training.')
-
-flags.DEFINE_string('data_dir', None, 'Directory where dataset is stored.')
-
-flags.DEFINE_enum('optimizer', 'lars', ['momentum', 'adam', 'lars', 'lamb'], 'Optimizer to use.')
-
-flags.DEFINE_float('momentum', 0.9, 'Momentum parameter.')
-
-flags.DEFINE_string('eval_name', None, 'Name for eval.')
-
-#changed 5 (default) to 20 just for save
-flags.DEFINE_integer('keep_checkpoint_max', 20, 'Maximum number of checkpoints to keep.')
-
-flags.DEFINE_integer('keep_hub_module_max', 1, 'Maximum number of Hub modules to keep.')
-
-flags.DEFINE_float('temperature', 0.1, 'Temperature parameter for contrastive loss.')
-
-flags.DEFINE_boolean('hidden_norm', True, 'Temperature parameter for contrastive loss.')
-
-flags.DEFINE_enum('proj_head_mode', 'nonlinear', ['none', 'linear', 'nonlinear'], 'How the head projection is done.')
-
-flags.DEFINE_integer('proj_out_dim', 128, 'Number of head projection dimension.')
-
-flags.DEFINE_integer('num_proj_layers', 3, 'Number of non-linear head layers.')
-
-flags.DEFINE_integer('ft_proj_selector', 0, 'Which layer of the projection head to use during fine-tuning. '
-    '0 means no projection head, and -1 means the final layer.')
-
+############ Used in resnet_pretrain
 flags.DEFINE_boolean('global_bn', True, 'Whether to aggregate BN statistics across distributed cores.')
 
-flags.DEFINE_integer('width_multiplier', 1, 'Multiplier to change width of network.')
-
-flags.DEFINE_integer('resnet_depth', 50, 'Depth of ResNet.')
-
-flags.DEFINE_float('sk_ratio', 0., 'If it is bigger than 0, it will enable SK. Recommendation: 0.0625.')
-
-flags.DEFINE_float('se_ratio', 0., 'If it is bigger than 0, it will enable SE.')
-
+############ Used in model_pretrain
+flags.DEFINE_float('momentum', 0.9, 'Momentum parameter.')
+flags.DEFINE_float('weight_decay', 1e-6, 'Amount of weight decay to use.')
+flags.DEFINE_float('warmup_epochs', 10, 'Number of epochs of warmup.')
+#changed 512 (default) to 16 because our hardware
+flags.DEFINE_integer('train_batch_size', 16, 'Batch size for training.')
+flags.DEFINE_integer('train_steps', 0, 'Number of steps to train for. If provided, overrides train_epochs.')
+flags.DEFINE_integer('train_epochs', 100, 'Number of epochs to train for.')
+flags.DEFINE_integer('num_proj_layers', 3, 'Number of non-linear head layers.')
+flags.DEFINE_integer('proj_out_dim', 128, 'Number of head projection dimension.')
+flags.DEFINE_boolean('use_blur', True, 'Whether or not to use Gaussian blur for augmentation during pretraining.')
 #changed 224 (default) to 330 because our experiments
 flags.DEFINE_integer('image_size', 330, 'Input image size.')
 
+############ Used in data_util_pretrain
 flags.DEFINE_float('color_jitter_strength', 1.0, 'The strength of color jittering.')
 
-flags.DEFINE_boolean('use_blur', True, 'Whether or not to use Gaussian blur for augmentation during pretraining.')
-##########################End Flags##################################
+############ Used in data_tfds_pretrain
+flags.DEFINE_string('train_split', 'train', 'Split for training.')
 
+############  Used in pretrain (here)
+flags.DEFINE_string('dataset', 'cifar10', 'Name of a dataset.')
+flags.DEFINE_integer('checkpoint_steps', 0,'Number of steps between checkpoints/summaries. If provided, overrides checkpoint_epochs.')
+flags.DEFINE_integer('checkpoint_epochs', 1, 'Number of epochs between checkpoints/summaries.')
+flags.DEFINE_float('learning_rate', 0.3, 'Initial learning rate per batch size of 256.')
+flags.DEFINE_boolean('hidden_norm', True, 'Temperature parameter for contrastive loss.')
+flags.DEFINE_float('temperature', 0.1, 'Temperature parameter for contrastive loss.')
+######################## End Flags ################################
 
 def main(argv):
     if len(argv) > 1:
         raise app.UsageError('Too many command-line arguments')
 
-    builder = tfds.builder(FLAGS.dataset, data_dir=FLAGS.data_dir)
+    builder = tfds.builder(FLAGS.dataset)
     builder.download_and_prepare()
     num_train_examples = builder.info.splits[FLAGS.train_split].num_examples
-    num_classes = builder.info.features['label'].num_classes
 
     train_steps = FLAGS.train_steps or (num_train_examples * FLAGS.train_epochs // FLAGS.train_batch_size + 1)
     epoch_steps = int(round(num_train_examples / FLAGS.train_batch_size))
@@ -132,7 +73,7 @@ def main(argv):
 
     #instanciating model
     with strategy.scope():
-        model = model_lib.Model(num_classes)
+        model = model_lib.Model()
 
         #build input pipeline
         ds = data_lib.build_distributed_dataset(builder, FLAGS.train_batch_size,strategy)
@@ -163,6 +104,7 @@ def main(argv):
                     features, labels = images, {'labels': labels}
                     strategy.run(single_step, (features, model,optimizer, contrast_loss_metric, contrast_acc_metric,
                         contrast_entropy_metric, weight_decay_metric, total_loss_metric))
+
         global_step = optimizer.iterations
         cur_step = global_step.numpy()
         iterator = iter(ds)
@@ -184,15 +126,14 @@ def main(argv):
 #el dummy _ al single step, hay que revisar como guardar el valor de las metricas o en su caso usar el summarywriter
 
 
-
 def single_step(features, model, optimizer, contrast_loss_metric, contrast_acc_metric,
                     contrast_entropy_metric, weight_decay_metric, total_loss_metric):
 
     with tf.GradientTape() as tape:
-        projection_head_outputs, _ = model(features, training = True)
+        projection_head_outputs = model(features, training = True)
         con_loss, logits_con, labels_con = contrastive_loss(projection_head_outputs, hidden_norm=FLAGS.hidden_norm, temperature=FLAGS.temperature)
 
-        ############update metrics#######################
+        ############ Update metrics #######################
         contrast_loss_metric.update_state(con_loss)
 
         contrast_acc_val = tf.equal(tf.argmax(labels_con, 1), tf.argmax(logits_con, axis=1))
