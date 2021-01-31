@@ -22,6 +22,7 @@ flags.DEFINE_bool('zero_init_logits_layer', False, 'If True, zero initialize lay
 
 ############ Used in resnet_pretrain
 flags.DEFINE_boolean('global_bn', True, 'Whether to aggregate BN statistics across distributed cores.')
+flags.DEFINE_float('batch_norm_decay', 0.9, 'Batch norm decay parameter.')
 
 ############ Used in model_pretrain
 flags.DEFINE_float('momentum', 0.9, 'Momentum parameter.')
@@ -36,6 +37,7 @@ flags.DEFINE_integer('proj_out_dim', 128, 'Number of head projection dimension.'
 flags.DEFINE_boolean('use_blur', True, 'Whether or not to use Gaussian blur for augmentation during pretraining.')
 #changed 224 (default) to 330 because our experiments
 flags.DEFINE_integer('image_size', 330, 'Input image size.')
+flags.DEFINE_integer('resnet_depth', 50, 'Depth of ResNet.')
 
 ############ Used in data_util_pretrain
 flags.DEFINE_float('color_jitter_strength', 1.0, 'The strength of color jittering.')

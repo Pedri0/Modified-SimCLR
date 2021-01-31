@@ -41,7 +41,7 @@ def bulid_input_fn(global_batch_size):
         dataset = dataset.repeat(-1)
         dataset = dataset.map(map_fn, num_parallel_calls=tf.data.experimental.AUTOTUNE)
         dataset = dataset.batch(batch_size, drop_remainder=True)
-        dataset = dataset.prefetch(tf.data.AUTOTUNE)
+        dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
         return dataset
 
     return _input_fn_
