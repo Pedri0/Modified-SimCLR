@@ -50,7 +50,7 @@ class BatchNormRelu(tf.keras.layers.Layer):
             gamma_initializer = tf.zeros_initializer()
         else:
             gamma_initializer = tf.ones_initializer()
-        if data_format == 'channels_last':
+        if data_format == 'channels_first':
             bn_axis = 1
         else:
             bn_axis = -1

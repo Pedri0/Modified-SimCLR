@@ -4,10 +4,12 @@ from absl import logging
 import tensorflow.compat.v2 as tf
 import tensorflow_datasets as tfds
 import pandas as pd
+import glob
 
 import data_tfds_pretrain as data_lib
 import model_pretrain as model_lib
 import restore_checkpoint
+
 
 
 FLAGS = flags.FLAGS
@@ -93,6 +95,8 @@ def main(argv):
         contrast_entropy_metric = tf.keras.metrics.Mean('train/contrast_entropy')
         all_metrics.extend([weight_decay_metric, total_loss_metric,
             contrast_loss_metric, contrast_acc_metric, contrast_entropy_metric])
+        #Build list for store history of metrics
+        hist_weight_decay, hist_total_loss, hist_contrast_loss, hist_contrast_acc, hist_contrast_entropy, curr_step = ([] for i in range(6))
 
         #Restore checkpoint if avalaible
         checkpoint_manager = restore_checkpoint.try_restore_from_checkpoint(model, optimizer.iterations, optimizer)
@@ -116,18 +120,36 @@ def main(argv):
             cur_step = global_step.numpy()
             checkpoint_manager.save(cur_step)
             logging.info('Completed: %d / %d steps', cur_step, train_steps)
+            #save train statics in local variables
+            weight_decay = weight_decay_metric.result().numpy()
+            total_loss = total_loss_metric.result().numpy()
+            contrast_loss = contrast_loss_metric.result().numpy()
+            contrast_acc = contrast_acc_metric.result().numpy() * 100
+            contrast_entropy = contrast_entropy_metric.result().numpy()
+            curr_step.append(cur_step)
+            #reset metrics
             for metric in all_metrics:
                 metric.reset_states()
+            #append train statics into the lists
+            hist_weight_decay.append(weight_decay)
+            hist_total_loss.append(total_loss)
+            hist_contrast_loss.append(contrast_loss)
+            hist_contrast_acc.append(contrast_acc)
+            hist_contrast_entropy.append(contrast_entropy)
         
         logging.info('Training complete :)')
-        df = pd.DataFrame(all_metrics)
-        df.to_csv('all_metrics.csv', index=False)
 
+        filename = 'all_metrics_up_to_' + str(train_steps) + '_train_steps.csv'
+        already_exist = glob.glob(filename)
+        if not already_exist:
+            df = pd.DataFrame(list(zip(curr_step, hist_weight_decay, hist_total_loss, hist_contrast_loss,
+                hist_contrast_acc, hist_contrast_entropy)), columns=['Step', 'WeightDecay', 'TotalLoss', 'ContrastiveLoss',
+                'ContrastiveAccuracy', 'ContrastiveEntropy'])
+            df.to_csv(filename, index=False)
+        else:
+            logging.info('This file already exist, so I wont overwrite it: %s', filename)
 
-####################Nota: si entrena, guarda y carga los pesos (de 1 epoca al parece), entrena con los otros archivos de simclr sin modificar. para ello tuve que ponerle
-#el dummy _ al single step, hay que revisar como guardar el valor de las metricas o en su caso usar el summarywriter
-
-
+@tf.function
 def single_step(features, model, optimizer, contrast_loss_metric, contrast_acc_metric,
                     contrast_entropy_metric, weight_decay_metric, total_loss_metric):
 
