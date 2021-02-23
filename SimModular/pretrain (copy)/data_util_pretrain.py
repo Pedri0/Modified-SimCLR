@@ -109,7 +109,7 @@ def preprocess_for_train(image, height, width, color_distort=True, crop=True, fl
         image = tf.image.random_flip_left_right(image)
     if color_distort:
         image = random_color_jitter(image)
-    image = image = tf.reshape(image, [height, width, 3])
+    image = tf.reshape(image, [height, width, 3])
     image = tf.clip_by_value(image, 0., 1.)
     return image
 

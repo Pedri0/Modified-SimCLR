@@ -9,6 +9,7 @@ import glob
 import data_tfds_pretrain as data_lib
 import model_pretrain as model_lib
 import restore_checkpoint
+import contrastive_loss
 
 
 
@@ -108,8 +109,8 @@ def main(argv):
                 with tf.name_scope(''):
                     images, labels = next(iterator)
                     features, labels = images, {'labels': labels}
-                    strategy.run(single_step, (features, model,optimizer, contrast_loss_metric, contrast_acc_metric,
-                        contrast_entropy_metric, weight_decay_metric, total_loss_metric))
+                    strategy.run(single_step, (features, model, optimizer, strategy, contrast_loss_metric,
+                        contrast_acc_metric, contrast_entropy_metric, weight_decay_metric, total_loss_metric))
 
         global_step = optimizer.iterations
         cur_step = global_step.numpy()
@@ -149,13 +150,20 @@ def main(argv):
         else:
             logging.info('This file already exist, so I wont overwrite it: %s', filename)
 
-@tf.function
-def single_step(features, model, optimizer, contrast_loss_metric, contrast_acc_metric,
+
+def single_step(features, model, optimizer, strategy, contrast_loss_metric, contrast_acc_metric,
                     contrast_entropy_metric, weight_decay_metric, total_loss_metric):
 
     with tf.GradientTape() as tape:
+        loss = None
         projection_head_outputs = model(features, training = True)
-        con_loss, logits_con, labels_con = contrastive_loss(projection_head_outputs, hidden_norm=FLAGS.hidden_norm, temperature=FLAGS.temperature)
+        con_loss, logits_con, labels_con = contrastive_loss.contrastive_loss(projection_head_outputs, hidden_norm=FLAGS.hidden_norm,
+            temperature=FLAGS.temperature, strategy = strategy)
+
+        if loss is None:
+            loss = con_loss
+        else:
+            loss += con_loss
 
         ############ Update metrics #######################
         contrast_loss_metric.update_state(con_loss)
@@ -171,32 +179,11 @@ def single_step(features, model, optimizer, contrast_loss_metric, contrast_acc_m
 
         weight_decay = model_lib.add_weight_decay(model)
         weight_decay_metric.update_state(weight_decay)
-        con_loss += weight_decay
-        total_loss_metric.update_state(con_loss)
-        grads = tape.gradient(con_loss, model.trainable_variables)
+        loss += weight_decay
+        total_loss_metric.update_state(loss)
+        loss = loss / strategy.num_replicas_in_sync
+        grads = tape.gradient(loss, model.trainable_variables)
         optimizer.apply_gradients(zip(grads, model.trainable_variables))
-
-
-def contrastive_loss(hidden, hidden_norm=True, temperature=1.0):
-    if hidden_norm:
-        hidden = tf.math.l2_normalize(hidden, -1)
-    hidden1, hidden2 = tf.split(hidden, 2, 0)
-    batch_size = tf.shape(hidden1)[0]
-    labels = tf.one_hot(tf.range(batch_size), batch_size * 2)
-    masks = tf.one_hot(tf.range(batch_size), batch_size)
-    
-    similarity1 = tf.matmul(hidden1, hidden1, transpose_b=True) / temperature
-    similarity1 = similarity1 - masks*1e9
-    similarity2 = tf.matmul(hidden2, hidden2, transpose_b=True) / temperature
-    similarity2 = similarity2 - masks*1e9
-    similarity12 = tf.matmul(hidden1, hidden2, transpose_b=True) / temperature
-    similarity21 = tf.matmul(hidden2, hidden1, transpose_b=True) / temperature
-    
-    loss_a = tf.nn.softmax_cross_entropy_with_logits(labels, tf.concat([similarity12, similarity1], 1))
-    loss_b = tf.nn.softmax_cross_entropy_with_logits(labels, tf.concat([similarity21, similarity2], 1))
-    loss = tf.reduce_mean(loss_a + loss_b)
-    
-    return loss, similarity12, labels    
 
 
 if __name__ == '__main__':

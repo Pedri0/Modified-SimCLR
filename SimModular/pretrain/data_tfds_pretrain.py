@@ -18,22 +18,19 @@
 import functools
 from absl import flags
 from absl import logging
-
-import data_util
 import tensorflow.compat.v2 as tf
+
+import data_util_pretrain
 
 FLAGS = flags.FLAGS
 
 
-def build_input_fn(builder, global_batch_size, topology):
+def build_input_fn(builder, global_batch_size):
   """Build input function.
 
   Args:
     builder: TFDS builder for specified dataset.
     global_batch_size: Global batch size.
-    topology: An instance of `tf.tpu.experimental.Topology` or None.
-    is_training: Whether to build in training mode.
-
   Returns:
     A function that accepts a dict of params and returns a tuple of images and
     features, to be used as the input_fn in TPUEstimator.
@@ -44,7 +41,7 @@ def build_input_fn(builder, global_batch_size, topology):
     batch_size = input_context.get_per_replica_batch_size(global_batch_size)
     logging.info('Global batch size: %d', global_batch_size)
     logging.info('Per-replica batch size: %d', batch_size)
-    preprocess_fn_pretrain = get_preprocess_fn(True, is_pretrain=True)
+    preprocess_fn_pretrain = get_preprocess_fn(color_distortion=True)
     num_classes = builder.info.features['label'].num_classes
 
     def map_fn(image, label):
@@ -73,30 +70,21 @@ def build_input_fn(builder, global_batch_size, topology):
     dataset = dataset.map(
         map_fn, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     dataset = dataset.batch(batch_size, drop_remainder=True)
-    prefetch_buffer_size = 2 * topology.num_tpus_per_task if topology else 2
-    dataset = dataset.prefetch(prefetch_buffer_size)
+    dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
     return dataset
 
   return _input_fn
 
 
-def build_distributed_dataset(builder, batch_size, strategy,
-                              topology):
-  input_fn = build_input_fn(builder, batch_size, topology)
+def build_distributed_dataset(builder, batch_size, strategy):
+  input_fn = build_input_fn(builder, batch_size)
   return strategy.experimental_distribute_datasets_from_function(input_fn)
 
 
-def get_preprocess_fn(is_training, is_pretrain):
-  """Get function that accepts an image and returns a preprocessed image."""
-  # Disable test cropping for small images (e.g. CIFAR)
-  if FLAGS.image_size <= 32:
-    test_crop = False
-  else:
-    test_crop = True
+def get_preprocess_fn(color_distortion):
+  
   return functools.partial(
-      data_util.preprocess_image,
+      data_util_pretrain.preprocess_image,
       height=FLAGS.image_size,
       width=FLAGS.image_size,
-      is_training=is_training,
-      color_distort=is_pretrain,
-      test_crop=test_crop)
+      color_distort=color_distortion)

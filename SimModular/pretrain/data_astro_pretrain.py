@@ -1,27 +1,24 @@
 import functools
 from absl import flags
 from absl import logging
-from absl.app import FLAGS
-
-import data_util
-import galaxies_data_pretrain as galax
 import tensorflow.compat.v2 as tf
+import pandas as pd
 
+import data_util_pretrain
 FLAGS = flags.FLAGS
 
 def bulid_input_fn(global_batch_size):
-    """Build input function.
-    Args:
-        global_batch_size: Global batch size.
-        is_training: Whether to build in training mode.
-    Returns:
-        A function that accepts a dict of params and returns a tuple of images and
-        features, to be used as the input_fn in TPUEstimator.
-    """
+    #Build input function.
+    #Args:
+    #    global_batch_size: Global batch size.
+    #Returns:
+    #    A function that accepts a dict of params and returns a tuple of images and
+    #    features, to be used as the input_fn in TPUEstimator.
     def _input_fn_(input_context):
         #Inner input function
         batch_size = input_context.get_per_replica_batch_size(global_batch_size)
-        #deleted loggins
+        logging.info('Global batch size: %d', global_batch_size)
+        logging.info('Per-replica batch size: %d', batch_size)
         preprocess_fn_pretrain = get_preprocess_fn(True, is_pretrain=True)
         num_classes = 5
 
@@ -35,18 +32,16 @@ def bulid_input_fn(global_batch_size):
             return image, label
 
         logging.info('Using Astro pretrain data')
-        dataset = galax.get_data_train()
+        dataset = get_data_train()
 
         if input_context.num_input_pipelines > 1:
             dataset = dataset.shard(input_context.num_input_pipelines, input_context.input_pipeline_id)
 
-        buffer_multiplier = 10
-        dataset = dataset.shuffle(batch_size * buffer_multiplier)
+        dataset = dataset.shuffle(batch_size * 10)
         dataset = dataset.repeat(-1)
         dataset = dataset.map(map_fn, num_parallel_calls=tf.data.experimental.AUTOTUNE)
         dataset = dataset.batch(batch_size, drop_remainder=True)
-        prefetch_buffer_size = 2
-        dataset = dataset.prefetch(prefetch_buffer_size)
+        dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
         return dataset
 
     return _input_fn_
@@ -59,10 +54,30 @@ def get_preprocess_fn(is_training, is_pretrain):
     #Get function that accepts an image and returns a preprocessed image
     test_crop=True
     return functools.partial(
-        data_util.preprocess_image,
+        data_util_pretrain.preprocess_image,
         height = FLAGS.image_size,
         width= FLAGS.image_size,
         is_training=is_training,
         color_distort=is_pretrain,
-        test_crop=test_crop
-    )
+        test_crop=test_crop)
+
+
+def get_data_train():
+    logging.info('Loading Astro pretrain data')
+    data_dir = '/home/pedri0/Documents/imagenes_no_clasificadas_desi/'
+    def read_images(image_file, label):
+        image = tf.io.read_file(data_dir + image_file)
+        image = tf.image.decode_jpeg(image, channels = 3)
+        return image, label
+    
+    AUTOTUNE = tf.data.experimental.AUTOTUNE
+    df = pd.read_csv('/home/pedri0/Documents/GitHub/Modified-SimCLR/SimCLRTF2/galaxies_train.csv')
+    file_paths = df['name'].values
+    labels = tf.zeros([df.shape[0]], dtype=tf.int64)
+    ds_train = tf.data.Dataset.from_tensor_slices((file_paths, labels))
+    ds_train = ds_train.map(read_images, num_parallel_calls =AUTOTUNE)
+    return ds_train
+
+def get_number_of_images(path_to_csv):
+    df = pd.read_csv(path_to_csv)
+    return df.shape[0]

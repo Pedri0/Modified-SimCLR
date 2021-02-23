@@ -2,7 +2,7 @@ import math
 import tensorflow.compat.v2 as tf
 from absl import flags
 
-import data_util_pretrain
+import data_util_pretrain as data_util
 import lars_optimizer
 import resnet_pretrain as resnet
 
@@ -42,7 +42,6 @@ class WarmUpAndCosineDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
             learning_rate = (step / float(warmup_steps) * scaled_lr if warmup_steps else scaled_lr)
             #Cosine decay learning rate schedule
             total_steps = FLAGS.train_steps or (self.num_examples * FLAGS.train_epochs // FLAGS.train_batch_size + 1)
-            #TODO: cache this object
             cosine_decay = tf.keras.experimental.CosineDecay(scaled_lr, total_steps - warmup_steps)
             learning_rate = tf.where(step < warmup_steps, learning_rate, cosine_decay(step - warmup_steps))
 
@@ -69,7 +68,6 @@ class LinearLayer(tf.keras.layers.Layer):
             self.bn_relu = resnet.BatchNormRelu(relu=False, center=use_bias)
 
     def build(self, input_shape):
-        ## TODO: Add a new SquareDense layer.
         if callable(self.num_classes):
             self.dense.units = self.num_classes(input_shape)
         super(LinearLayer,self).build(input_shape)
@@ -92,7 +90,7 @@ class ProjectionHead(tf.keras.layers.Layer):
                     use_bias=True, use_bn=True, name='nl_%d' % j))
             else:
                 #for the final layer, neither bias nor relu is used
-                self.linear_layers.append(LinearLayer(num_classes=FLAGS.proj_out_dim, use_bias=False, use_bn=True, name='nl_%d' %j))
+                self.linear_layers.append(LinearLayer(num_classes=FLAGS.proj_out_dim, use_bias=False, use_bn=True, name='nl_%d' % j))
 
         super(ProjectionHead, self).__init__(**kwargs)
     
@@ -100,7 +98,7 @@ class ProjectionHead(tf.keras.layers.Layer):
         hiddens_list = [tf.identity(inputs, 'proj_head_input')]
         for j in range(FLAGS.num_proj_layers):
             hiddens = self.linear_layers[j](hiddens_list[-1], training)
-            if j!= FLAGS.num_proj_layers - 1:
+            if j != FLAGS.num_proj_layers - 1:
                 #for the middle layers, use bias and relu for the output.
                 hiddens = tf.nn.relu(hiddens)
             hiddens_list.append(hiddens)
