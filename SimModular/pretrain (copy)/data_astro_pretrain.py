@@ -19,7 +19,7 @@ def bulid_input_fn(global_batch_size):
         batch_size = input_context.get_per_replica_batch_size(global_batch_size)
         logging.info('Global batch size: %d', global_batch_size)
         logging.info('Per-replica batch size: %d', batch_size)
-        preprocess_fn_pretrain = get_preprocess_fn(True, is_pretrain=True)
+        preprocess_fn_pretrain = get_preprocess_fn(color_distortion=True)
         num_classes = 5
 
         def map_fn(image, label):
@@ -50,16 +50,13 @@ def build_distributed_dataset(batch_size, strategy):
     input_fn = bulid_input_fn(batch_size)
     return strategy.distribute_datasets_from_function(input_fn)
 
-def get_preprocess_fn(is_training, is_pretrain):
+def get_preprocess_fn(color_distortion):
     #Get function that accepts an image and returns a preprocessed image
-    test_crop=True
     return functools.partial(
         data_util_pretrain.preprocess_image,
         height = FLAGS.image_size,
         width= FLAGS.image_size,
-        is_training=is_training,
-        color_distort=is_pretrain,
-        test_crop=test_crop)
+        color_distort=color_distortion)
 
 
 def get_data_train():
