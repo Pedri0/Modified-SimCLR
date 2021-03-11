@@ -205,6 +205,36 @@ def equalize(image):
     return equalized_image
 
 
+def functions_rand(image):
+
+    def apply_transform(i, x):
+
+        def auto_contrast_foo():
+            return auto_contrast(x)
+
+        def color_foo():
+            return color(x, magnitude = tf.random.uniform([], 0.1, 1.0))
+
+        def sharpness_foo():
+            return sharpness(x, magnitude = tf.random.uniform([], 0, 1.0))
+
+        def posterize_foo():
+            return posterize(x, bits = tf.cast(tf.random.uniform([], 4, 9), tf.int8))
+    
+        x = tf.cond(tf.less(i,2),
+            lambda: tf.cond(tf.less(i, 1), auto_contrast_foo, color_foo),
+            lambda: tf.cond(tf.less(i, 3), sharpness_foo, posterize_foo))
+
+        return x
+
+    perm = tf.random.shuffle(tf.range(4))
+
+    for element in range(4):
+        image = apply_transform(perm[element], image)
+        #image = tf.clip_by_value(image, 0., 1.)
+    
+    return image
+
 
     
 
