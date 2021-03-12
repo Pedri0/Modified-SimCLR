@@ -235,6 +235,72 @@ def functions_rand(image):
     
     return image
 
+@tf.function
+def sobel_x_t(image):
+    #Gets sobel dx filter for an image tensor
+
+    #Args.
+        #image: float tensor of shape (height, width, channels)
+
+    #Returns.
+        # sobel filter dx or dy depending on random number
+    
+    sobel_x = tf.constant([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], tf.float32, shape = [3, 3, 1, 1])
+    sobel_x = tf.tile(sobel_x, [1, 1, 3, 1])
+    
+    pad_sizes = tf.constant([[1, 1], [1, 1], [0, 0]], tf.int32)
+    padded = tf.pad(image, pad_sizes, mode='REFLECT')
+    strides = [1,1,1,1]
+    sobel = tf.nn.depthwise_conv2d(padded[None, ...], sobel_x, strides, padding='VALID')
+    sobel = tf.clip_by_value(sobel, 0., 1.)
+    sobel = sobel[0]
+    sobel = tf.image.convert_image_dtype(sobel, tf.uint8)
+    
+    return sobel
+
+@tf.function
+def sobel_y_t(image):
+    #Gets sobel filter dy for an image tensor
+
+    #Args.
+        #image: float tensor of shape (height, width, channels)
+
+    #Returns.
+        # sobel filter dy
+    
+    sobel_y = tf.constant([[1, 0, -1], [2, 0, -2], [1, 0, -1]], tf.float32, shape = [3, 3, 1, 1])
+    sobel_y = tf.tile(sobel_y, [1, 1, 3, 1])
+    
+    pad_sizes = tf.constant([[1, 1], [1, 1], [0, 0]], tf.int32)
+    padded = tf.pad(image, pad_sizes, mode='REFLECT')
+    
+    
+    strides = [1,1,1,1]
+    sobel = tf.nn.depthwise_conv2d(padded[None, ...], sobel_y, strides, padding='VALID')
+    sobel = tf.clip_by_value(sobel, 0., 1.)
+    sobel = sobel[0]
+    sobel = tf.image.convert_image_dtype(sobel, tf.uint8)
+
+    return sobel
+
+@tf.function
+def sobel_edges(image):
+    #Gets only one image from sobel filter dx or dy
+
+    #Args.
+        #image: float tensor of shape (height, width, channels)
+
+    #Returns.
+        # sobel filter dx or dy depending on random number
+    
+    random_integer = tf.cast(tf.random.uniform([], 0, 2), tf.int8)
+
+    image = tf.cond(tf.less(random_integer, 1),
+            lambda: sobel_x_t(image),
+            lambda: sobel_y_t(image))
+
+    return image
+
 
     
 
