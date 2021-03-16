@@ -1695,3 +1695,412 @@ Experimento 16:  Carpeta TransfTFOriginals5
     --lr 0.0008:
         Acc. 65.84821428571429
         prediccionescorrectas: 2360
+
+
+
+
+
+Experimento 17:  Carpeta TransfTFOriginals6
+
+--Pretrain tensorflow + originales:
+    100 epocas de 0 a 99. Tardo 36 minutos 18 segundos Parametros:
+    python pretrain.py --train_batch_size=512 --train_epochs=100 --learning_rate=0.075 --weight_decay=1e-4 --temperature=0.1 --image_size=100 --resnet_depth=18   --use_blur=True --model_dir=astroP --color_jitter_strength=0.5
+    prametos por deafault en pretrain.py:
+    global_bn = True, batch_norm_decay = 0.9, momentum = 0.9, warmup_epochs = 10, num_proj_layers = 3, proj_out_dim = 128, hidden_norm = True
+
+    Transformaciones hechas con implementacion TF + originales, estas son:
+        image = random_crop_with_resize(image, height, width)
+        image = random_darker(image, p=0.5)
+        image = random_sharpness_with_posterize(image, p=0.5)
+        image = random_color_jitter(image)
+        image = random_solarize_plus_invert(image, p = 0.2)
+        image = random_sobel(image, p=0.3)
+        image  = tf.image.random_flip_left_right(image)
+        image  = tf.image.random_flip_up_down(image)
+        image = tf.reshape(image, [height, width, 3])
+        image = tf.clip_by_value(image, 0., 1.)
+
+        return image
+
+    crop and resize cambie a los siguientes parametros
+        min_object_covered=0.2
+        area_range=(0.2, 1.0)
+
+
+--Finetuning:
+    90 epocas de 0 a 89
+    python finetune.py --fine_tune_after_block=-1 --checkpoint=point/ckpt-1836  --global_bn=False --weight_decay=1e-6   --train_epochs=90 --train_batch_size=512 --warmup_epochs=0 --image_size=100 --model_dir=Finetuned90epochswith100pre2e-2lr --learning_rate=2e-2
+    por defecto:
+    'batch_norm_decay', 0.9
+    momentum', 0.9
+    num_proj_layers', 3
+    proj_out_dim', 128
+    use_blur', True
+    resnet_depth', 18
+    ft_proj_selector', 0
+    color_jitter_strength, 0.5
+
+
+    Learning rate 0.01 termina con 63.47% de acc en train
+    Learning rate 0.02 termina con 60.54% de acc en train
+    Learning rate 0.001 termina con 64.06% de acc en train
+    Learning rate 0.0008 termina con 62.30% de acc en train
+    Learning rate 0.0005 termina con 66.60% de acc en train
+    Learning rate 0.0002 termina con 61.13% de acc en train
+    Learning rate 0.00008 termina con 58.59% de acc en train
+    Learning rate 0.00005 termina con 59.17% de acc en train
+    Learning rate 0.00001 termina con 50.78% de acc en train
+
+
+--Eval: center crop al 0.5 en Eval obvio
+    Realizada con nairTest.csv se consideran 3584 imagenes. 
+
+    --lr 0.01:
+        Acc. 64.39732142857143
+        prediccionescorrectas: 2308
+    
+
+    --lr 0.02:
+        Acc. 66.68526785714286
+        prediccionescorrectas: 2390
+
+    
+    --lr 0.001:
+        Acc. 68.41517857142857
+        prediccionescorrectas: 2452
+
+
+    --lr 0.0008:
+        Acc. 68.30357142857143
+        prediccionescorrectas: 2448
+
+    --lr 0.0005:
+        Acc. 68.05245535714286
+        prediccionescorrectas: 2439
+
+    --lr 0.0002:
+        Acc. 67.10379464285714
+        prediccionescorrectas: 2405
+
+    --lr 0.00008:
+        Acc. 65.234375
+        prediccionescorrectas: 2338
+
+    --lr 0.00005:
+        Acc. 63.22544642857143
+        prediccionescorrectas: 2266
+
+    --lr 0.00001:
+        Acc. 51.78571428571429
+        prediccionescorrectas: 1856
+
+
+
+
+
+
+
+Experimento 18:  Carpeta TransfTFOriginals7
+
+--Pretrain tensorflow + originales:
+    100 epocas de 0 a 99. Tardo 39 minutos 26 segundos Parametros:
+    python pretrain.py --train_batch_size=512 --train_epochs=100 --learning_rate=0.075 --weight_decay=1e-4 --temperature=0.1 --image_size=100 --resnet_depth=18   --use_blur=True --model_dir=astroP --color_jitter_strength=0.5
+    prametos por deafault en pretrain.py:
+    global_bn = True, batch_norm_decay = 0.9, momentum = 0.9, warmup_epochs = 10, num_proj_layers = 3, proj_out_dim = 128, hidden_norm = True
+
+    Transformaciones hechas con implementacion TF + originales, estas son:
+       image = random_crop_with_resize(image, height, width)
+        image = random_darker(image, p=0.5)
+        image = random_sharpness_contrast_posterize(image, p=0.5)
+        image = random_color_jitter(image)
+        image = random_solarize_plus_invert(image, p = 0.2)
+        image = random_sobel(image, p=0.3)
+        image  = tf.image.random_flip_left_right(image)
+        image  = tf.image.random_flip_up_down(image)
+        image = tf.reshape(image, [height, width, 3])
+        image = tf.clip_by_value(image, 0., 1.)
+
+        return image
+
+    crop and resize cambie a los siguientes parametros
+        min_object_covered=0.2
+        area_range=(0.2, 1.0)
+
+
+
+--Finetuning:
+    90 epocas de 0 a 89
+    python finetune.py --fine_tune_after_block=-1 --checkpoint=point/ckpt-1836  --global_bn=False --weight_decay=1e-6   --train_epochs=90 --train_batch_size=512 --warmup_epochs=0 --image_size=100 --model_dir=Finetuned90epochswith100pre2e-2lr --learning_rate=2e-2
+    por defecto:
+    'batch_norm_decay', 0.9
+    momentum', 0.9
+    num_proj_layers', 3
+    proj_out_dim', 128
+    use_blur', True
+    resnet_depth', 18
+    ft_proj_selector', 0
+    color_jitter_strength, 0.5
+
+
+    Learning rate 0.01 termina con 60.74% de acc en train
+    Learning rate 0.02 termina con 61.52% de acc en train
+    Learning rate 0.001 termina con 63.67% de acc en train
+    Learning rate 0.0008 termina con 67.57% de acc en train
+    Learning rate 95 e-4 termina con 48.63% de acc en train
+    Learning rate 0.00095 termina con 63.67% de acc en train
+
+
+--Eval: center crop al 0.5 en Eval obvio
+    Realizada con nairTest.csv se consideran 3584 imagenes. 
+
+    --lr 0.01:
+        Acc. 56.08258928571429
+        prediccionescorrectas: 2010
+    
+
+    --lr 0.02:
+        Acc. 67.27120535714286
+        prediccionescorrectas: 2411
+
+    
+    --lr 0.001:
+        Acc. 66.57366071428571
+        prediccionescorrectas: 2386
+
+
+    --lr 0.0008:
+        Acc. 67.85714285714286
+        prediccionescorrectas: 2432
+
+    --lr 0.00095:
+        Acc. 67.55022321428571
+        prediccionescorrectas: 2421
+
+
+
+
+
+
+Experimento 19:  Carpeta Originales+CenterCrop65
+
+--Pretrain originales + CenterCrop al 65%:
+    100 epocas de 0 a 99. Tardo 1 hora 03 minutos 56 segundos Parametros:
+    python pretrain.py --train_batch_size=512 --train_epochs=100 --learning_rate=0.075 --weight_decay=1e-4 --temperature=0.1 --image_size=100 --resnet_depth=18   --use_blur=True --model_dir=astroP --color_jitter_strength=0.5
+    prametos por deafault en pretrain.py:
+    global_bn = True, batch_norm_decay = 0.9, momentum = 0.9, warmup_epochs = 10, num_proj_layers = 3, proj_out_dim = 128, hidden_norm = True
+
+
+--Finetuning:
+    90 epocas de 0 a 89
+    python finetune.py --fine_tune_after_block=-1 --checkpoint=point/ckpt-1836  --global_bn=False --weight_decay=1e-6   --train_epochs=90 --train_batch_size=512 --warmup_epochs=0 --image_size=100 --model_dir=Finetuned90epochswith100pre2e-2lr --learning_rate=2e-2
+    por defecto:
+    'batch_norm_decay', 0.9
+    momentum', 0.9
+    num_proj_layers', 3
+    proj_out_dim', 128
+    use_blur', True
+    resnet_depth', 18
+    ft_proj_selector', 0
+    color_jitter_strength, 0.5
+
+
+    Learning rate 0.01 termina con 58.59% de acc en train
+    Learning rate 0.02 termina con 60.54% de acc en train
+    Learning rate 0.001 termina con 67.77% de acc en train
+    Learning rate 0.0008 termina con 67.57% de acc en train
+    Learning rate 0.00095 termina con 68.94% de acc en train
+    Learning rate 0.0009 termina con 66.60% de acc en train
+
+
+--Eval: center crop al 0.5 en Eval obvio
+    Realizada con nairTest.csv se consideran 3584 imagenes. 
+
+    --lr 0.01:
+        Acc. 57.31026785714286
+        prediccionescorrectas: 2054
+    
+
+    --lr 0.02:
+        Acc. 63.72767857142857
+        prediccionescorrectas: 2284
+
+    
+    --lr 0.001:
+        Acc. 67.43861607142857
+        prediccionescorrectas: 2417
+
+
+    --lr 0.0008:
+        Acc. 66.96428571428571
+        prediccionescorrectas: 2400
+
+    --lr 0.00095:
+        Acc. 66.85267857142857
+        prediccionescorrectas: 2421
+
+    --lr 0.0009:
+        Acc. 67.63392857142857
+        prediccionescorrectas: 2424
+
+
+
+
+
+Experimento 20:  Carpeta TransfTFOriginals8
+
+--Pretrain tensorflow + originales:
+    100 epocas de 0 a 99. Tardo 43 minutos 35 segundos Parametros:
+    python pretrain.py --train_batch_size=512 --train_epochs=100 --learning_rate=0.075 --weight_decay=1e-4 --temperature=0.1 --image_size=100 --resnet_depth=18   --use_blur=True --model_dir=astroP --color_jitter_strength=0.5
+    prametos por deafault en pretrain.py:
+    global_bn = True, batch_norm_decay = 0.9, momentum = 0.9, warmup_epochs = 10, num_proj_layers = 3, proj_out_dim = 128, hidden_norm = True
+
+    Transformaciones hechas con implementacion TF + originales, estas son:
+        image = random_crop_with_resize(image, height, width)
+        image = random_darker(image, p=0.5)
+        image = random_sharpness_with_posterize(image, p=0.5)
+        image = random_color_jitter(image)
+        image = random_solarize_plus_invert(image, p = 0.2)
+        image = random_sobel(image, p=0.3)
+        image  = tf.image.random_flip_left_right(image)
+        image  = tf.image.random_flip_up_down(image)
+        image = tf.reshape(image, [height, width, 3])
+        image = tf.clip_by_value(image, 0., 1.)
+
+        return image
+
+    crop and resize cambie a los siguientes parametros
+        min_object_covered=0.2
+        area_range=(0.2, 1.0)
+
+    centercrop al 0.5 los TransfTFOriginals8 y TransfTFOriginals7 TransfTFOriginals6 eran con centercrop al 0.65
+
+
+--Finetuning:
+    90 epocas de 0 a 89
+    python finetune.py --fine_tune_after_block=-1 --checkpoint=point/ckpt-1836  --global_bn=False --weight_decay=1e-6   --train_epochs=90 --train_batch_size=512 --warmup_epochs=0 --image_size=100 --model_dir=lr2e-2 --learning_rate=2e-2
+    por defecto:
+    'batch_norm_decay', 0.9
+    momentum', 0.9
+    num_proj_layers', 3
+    proj_out_dim', 128
+    use_blur', True
+    resnet_depth', 18
+    ft_proj_selector', 0
+    color_jitter_strength, 0.5
+
+
+    Learning rate 0.01 termina con 52.34% de acc en train
+    Learning rate 0.02 termina con 55.07% de acc en train
+    Learning rate 0.001 termina con 64.25% de acc en train
+    Learning rate 0.0009 termina con 66.60% de acc en train
+    Learning rate 0.0008 termina con 66.99% de acc en train
+
+
+--Finetuning:
+    60 epocas de 0 a 59
+    python finetune.py --fine_tune_after_block=-1 --checkpoint=point/ckpt-1836  --global_bn=False --weight_decay=1e-6   --train_epochs=60 --train_batch_size=512 --warmup_epochs=0 --image_size=100 --model_dir=60Epochlr8e-4 --learning_rate=8e-4
+    por defecto:
+    'batch_norm_decay', 0.9
+    momentum', 0.9
+    num_proj_layers', 3
+    proj_out_dim', 128
+    use_blur', True
+    resnet_depth', 18
+    ft_proj_selector', 0
+    color_jitter_strength, 0.5
+
+    Learning rate 0.01 termina con 58.39% de acc en train
+    Learning rate 0.02 termina con 50.58% de acc en train
+    Learning rate 0.001 termina con 66.40% de acc en train
+    Learning rate 0.0009 termina con 63.86% de acc en train
+    Learning rate 0.0008 termina con 62.10% de acc en train
+
+
+--Finetuning:
+    75 epocas de 0 a 74
+    python finetune.py --fine_tune_after_block=-1 --checkpoint=point/ckpt-1836  --global_bn=False --weight_decay=1e-6   --train_epochs=75 --train_batch_size=512 --warmup_epochs=0 --image_size=100 --model_dir=75Epochlr8e-4 --learning_rate=8e-4
+    por defecto:
+    'batch_norm_decay', 0.9
+    momentum', 0.9
+    num_proj_layers', 3
+    proj_out_dim', 128
+    use_blur', True
+    resnet_depth', 18
+    ft_proj_selector', 0
+    color_jitter_strength, 0.5
+
+    Learning rate 0.001 termina con 63.08% de acc en train
+    Learning rate 0.0009 termina con 62.89% de acc en train
+    Learning rate 0.0008 termina con 65.23% de acc en train
+
+
+--Eval 90 Epochs: center crop al 0.5 en Eval obvio
+    Realizada con nairTest.csv se consideran 3584 imagenes. 
+
+    --lr 0.01:
+        Acc. 50.22321428571429
+        prediccionescorrectas: 1800
+    
+
+    --lr 0.02:
+        Acc. 57.14285714285714
+        prediccionescorrectas: 2048
+
+    
+    --lr 0.001:
+        Acc. 66.12723214285714
+        prediccionescorrectas: 2370
+
+
+    --lr 0.0008:
+        Acc. 67.02008928571429
+        prediccionescorrectas: 2402
+
+    --lr 0.0009:
+        Acc. 66.43415178571429
+        prediccionescorrectas: 2381
+
+
+--Eval 60 Epochs: center crop al 0.5 en Eval obvio
+    Realizada con nairTest.csv se consideran 3584 imagenes. 
+
+    --lr 0.01:
+        Acc. 57.8125
+        prediccionescorrectas: 2072
+    
+
+    --lr 0.02:
+        Acc. 46.847098214285715
+        prediccionescorrectas: 1679
+
+    
+    --lr 0.001:
+        Acc. 65.26227678571429
+        prediccionescorrectas: 2339
+
+
+    --lr 0.0008:
+        Acc. 64.2578125
+        prediccionescorrectas: 2303
+
+    --lr 0.0009:
+        Acc. 66.74107142857143
+        prediccionescorrectas: 2392
+
+
+
+--Eval 75 Epochs: center crop al 0.5 en Eval obvio
+    Realizada con nairTest.csv se consideran 3584 imagenes. 
+
+    --lr 0.001:
+        Acc. 65.73660714285714
+        prediccionescorrectas: 2339
+
+
+    --lr 0.0008:
+        Acc. 62.890625
+        prediccionescorrectas: 2254
+
+    --lr 0.0009:
+        Acc. 65.06696428571429
+        prediccionescorrectas: 2332
