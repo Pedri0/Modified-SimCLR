@@ -41,7 +41,7 @@ def get_data_train():
 
 def get_data_test():
     #directorio de las imagenes de test
-    directory = '/home/pedri0/Documents/astrotf2/imagenes_clasificadas_nair/'
+    directory = 'imagenes_clasificadas_nair/'#'/home/pedri0/Documents/astrotf2/imagenes_clasificadas_nair/'
     AUTOTUNE = tf.data.experimental.AUTOTUNE
     #lectura de imagenes con tf.io
     def read_image(image_file, label):

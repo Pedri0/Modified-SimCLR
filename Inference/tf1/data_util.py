@@ -26,7 +26,7 @@ import tensorflow.compat.v1 as tf
 
 FLAGS = flags.FLAGS
 
-CROP_PROPORTION = 0.875  # Standard for ImageNet.
+CROP_PROPORTION = 0.745#0.875  # Standard for ImageNet.
 
 
 def random_apply(func, p, x):

@@ -20,3 +20,10 @@ savedModels/astropre100epochsfine90/finetunas/model.ckpt-141358.index
 savedModels/astropre100epochsfine90/finetunas/model.ckpt-141358.meta
 savedModels/astropre100epochsfine90/finetunas/result.json
 savedModels/astropre100epochsfine90/finetunas/result_141358.json
+*.index
+Inference/tf1/savedModels/astropre100epochsfine90/finetunas/checkpoint
+*.6528fcc82c4f
+*.json
+*.pbtxt
+*.pb
+*.meta
