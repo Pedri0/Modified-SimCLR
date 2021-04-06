@@ -1,7 +1,4 @@
 import tensorflow.compat.v2 as tf
-from absl import flags
-
-FLAGS = flags.FLAGS
 LARGE_NUM = 1e9
 
 

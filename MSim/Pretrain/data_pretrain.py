@@ -25,14 +25,14 @@ def bulid_input_fn(global_batch_size):
         def map_fn(image, label):
             #Produces multiple transformations of the same batch for pretraining
             xs = []
-            for _ in range(2):
+            for _ in range(2):  # Two transformations
                 xs.append(preprocess_fn_pretrain(image))
             image = tf.concat(xs, -1)
             label = tf.one_hot(label, num_classes)
             return image, label
 
         logging.info('Using Astro pretrain data')
-        dataset = get_data_train()
+        dataset = get_data_pretrain()
 
         if input_context.num_input_pipelines > 1:
             dataset = dataset.shard(input_context.num_input_pipelines, input_context.input_pipeline_id)
@@ -59,18 +59,18 @@ def get_preprocess_fn(color_distortion):
         color_distort=color_distortion)
 
 
-def get_data_train():
+def get_data_pretrain():
     logging.info('Loading Astro pretrain data')
-    data_dir = '/home/pedri0/Documents/imagenes_no_clasificadas_desi/'
+    data_dir = 'imagenes_clasificadas_nair/'
     def read_images(image_file, label):
         image = tf.io.read_file(data_dir + image_file)
         image = tf.image.decode_jpeg(image, channels = 3)
         return image, label
     
     AUTOTUNE = tf.data.experimental.AUTOTUNE
-    df = pd.read_csv('/home/pedri0/Documents/GitHub/Modified-SimCLR/SimCLRTF2/galaxies_train.csv')
+    df = pd.read_csv('nair_unbalanced_train.csv')
     file_paths = df['name'].values
-    labels = tf.zeros([df.shape[0]], dtype=tf.int64)
+    labels = tf.zeros([df.shape[0]], dtype=tf.int32)
     ds_train = tf.data.Dataset.from_tensor_slices((file_paths, labels))
     ds_train = ds_train.map(read_images, num_parallel_calls =AUTOTUNE)
     return ds_train

@@ -1,6 +1,7 @@
 from absl import flags
 from absl import logging
 import tensorflow.compat.v2 as tf
+
 FLAGS = flags.FLAGS
 
 def try_restore_from_checkpoint(model, global_step, optimizer):

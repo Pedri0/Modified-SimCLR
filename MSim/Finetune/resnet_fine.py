@@ -4,7 +4,7 @@ FLAGS = flags.FLAGS
 
 ##Conv2D function with fixed padding
 class Conv2Ds(tf.keras.layers.Layer):
-    def __init__(self, filters, kernel_size, strides, data_format, **kwargs):
+    def __init__(self, filters, kernel_size, strides, data_format='channels_last', **kwargs):
         super(Conv2Ds, self).__init__(**kwargs)
         if strides > 1:
             self.fixed_padding = FixedPadding(kernel_size, data_format=data_format)
@@ -12,7 +12,7 @@ class Conv2Ds(tf.keras.layers.Layer):
             self.fixed_padding = None
 
         self.conv2d = tf.keras.layers.Conv2D(filters=filters, kernel_size=kernel_size, strides=strides,
-            padding=('SAME' if strides==1 else 'VALID'), use_bias=False,
+            padding=('SAME' if strides == 1 else 'VALID'), use_bias=False,
             kernel_initializer=tf.keras.initializers.VarianceScaling(), data_format=data_format)
 
     def call(self, inputs, training):
@@ -31,13 +31,13 @@ class FixedPadding(tf.keras.layers.Layer):
     def call(self, inputs, training):
         kernel_size = self.kernel_size
         data_format = self.data_format
-        pad_total = kernel_size -1
+        pad_total = kernel_size - 1
         pad_beg = pad_total // 2
         pad_end = pad_total - pad_beg
         if data_format == 'channels_first':
             padded_inputs = tf.pad(inputs, [[0,0], [0,0], [pad_beg, pad_end], [pad_beg, pad_end]])
         else:
-            padded_inputs = tf.pad(inputs, [[0,0], [pad_beg, pad_end], [pad_beg, pad_end], [0,0]])
+            padded_inputs = tf.pad(inputs, [[0,0], [pad_beg, pad_end], [pad_beg, pad_end], [0, 0]])
 
         return padded_inputs
 
@@ -72,25 +72,27 @@ class BatchNormRelu(tf.keras.layers.Layer):
 
 ## fundamental block
 class BottleNeckRes(tf.keras.layers.Layer):
-    #bottleneck with projection shortcut
-    def __init__(self, filters, strides, data_format = 'channels_last', **kwargs):
+    #Bottleneck with projection shortcut
+    def __init__(self, filters, strides, use_projection=False, data_format = 'channels_last', **kwargs):
         super(BottleNeckRes, self).__init__(**kwargs)
         self.proyection_layers = []
-        filters_out = 4 * filters
-        self.proyection_layers.append(
-            Conv2Ds(filters=filters_out, kernel_size=1, strides=strides, data_format=data_format))
-        self.proyection_layers.append(BatchNormRelu(relu=False, data_format=data_format))
+
+        if use_projection:
+            filters_out = 4 * filters
+            self.proyection_layers.append(
+                Conv2Ds(filters=filters_out, kernel_size=1, strides=strides, data_format=data_format))
+            self.proyection_layers.append(BatchNormRelu(relu=False, data_format=data_format))
 
         self.conv_layers = []
         #mini block 1, see bottleneck architecture, consist of 3 miniblocks
         self.conv_layers.append(Conv2Ds(filters=filters, kernel_size=1, strides=1, data_format=data_format))
-        self.conv_layers.append(BatchNormRelu(relu=True, data_format=data_format))
+        self.conv_layers.append(BatchNormRelu(data_format=data_format))
         #mini block 2
         self.conv_layers.append(Conv2Ds(filters=filters, kernel_size=3, strides=strides, data_format=data_format))
-        self.conv_layers.append(BatchNormRelu(relu=True, data_format=data_format))
+        self.conv_layers.append(BatchNormRelu(data_format=data_format))
         #miniblock 3
         self.conv_layers.append(Conv2Ds(filters=4*filters, kernel_size=1, strides=1, data_format=data_format))
-        self.conv_layers.append(BatchNormRelu(relu=False, data_format=data_format))
+        self.conv_layers.append(BatchNormRelu(relu=False, init_zero=True, data_format=data_format))
 
     def call(self, inputs, training):
         shortcut = inputs
@@ -103,15 +105,18 @@ class BottleNeckRes(tf.keras.layers.Layer):
 
 
 class ResidualBlock(tf.keras.layers.Layer):
-    def __init__(self, filters, strides, data_format='channels_last', **kwargs):
+    def __init__(self, filters, strides, use_projection=False, data_format='channels_last', **kwargs):
         super(ResidualBlock, self).__init__(**kwargs)
         self.conv2d_layers = []
         self.shortcut_layers = []
 
-        self.shortcut_layers.append(Conv2Ds(filters=filters, kernel_size=1, strides=strides, data_format=data_format))
-        self.shortcut_layers.append(BatchNormRelu(relu=False, data_format=data_format))
+        if use_projection:
+            self.shortcut_layers.append(Conv2Ds(filters=filters, kernel_size=1, strides=strides, data_format=data_format))
+            self.shortcut_layers.append(BatchNormRelu(relu=False, data_format=data_format))
+
         self.conv2d_layers.append(Conv2Ds(filters=filters, kernel_size=3, strides=strides, data_format=data_format))
         self.conv2d_layers.append(BatchNormRelu(data_format=data_format))
+
         self.conv2d_layers.append(Conv2Ds(filters=filters, kernel_size=3, strides=1, data_format=data_format))
         self.conv2d_layers.append(BatchNormRelu(relu=False, init_zero=True, data_format=data_format))
     
@@ -131,8 +136,10 @@ class BlockGroup(tf.keras.layers.Layer):
     def __init__(self, filters, block_fn, blocks, strides, data_format='channels_last', **kwargs):
         self._name = kwargs.get('name')
         super(BlockGroup, self).__init__(**kwargs)
+
         self.layers = []
-        self.layers.append(block_fn(filters, strides, data_format=data_format))
+        self.layers.append(block_fn(filters, strides, use_projection=True, data_format=data_format))
+        
         for _ in range(1, blocks):
             self.layers.append(block_fn(filters, 1, data_format=data_format))
         
@@ -152,45 +159,61 @@ class Resnet(tf.keras.layers.Layer):
         super(Resnet, self).__init__(**kwargs)
         self.data_format = data_format
 
+        trainable = (FLAGS.fine_tune_after_block == -1)
+
         self.initial_layers = []
         if cifar_stem:
             self.initial_layers.append(Conv2Ds(filters=64, kernel_size=3, strides=1,
-                data_format=data_format, trainable=True))
-            self.initial_layers.append(IdentityLayer(name='initial_conv', trainable=True))
-            self.initial_layers.append(BatchNormRelu(data_format=data_format, trainable=True))
-            self.initial_layers.append(IdentityLayer(name='initial_max_pool', trainable=True))
+                data_format=data_format, trainable=trainable))
+            self.initial_layers.append(IdentityLayer(name='initial_conv', trainable=trainable))
+            self.initial_layers.append(BatchNormRelu(data_format=data_format, trainable=trainable))
+            self.initial_layers.append(IdentityLayer(name='initial_max_pool', trainable=trainable))
         else:
             self.initial_layers.append(Conv2Ds(filters=64, kernel_size=7, strides=2,
-                data_format=data_format, trainable=True))
-            self.initial_layers.append(IdentityLayer(name='initial_conv', trainable=True))
-            self.initial_layers.append(BatchNormRelu(data_format=data_format, trainable=True))
+                data_format=data_format, trainable=trainable))
+            self.initial_layers.append(IdentityLayer(name='initial_conv', trainable=trainable))
+            self.initial_layers.append(BatchNormRelu(data_format=data_format, trainable=trainable))
             self.initial_layers.append(tf.keras.layers.MaxPooling2D(pool_size=3, strides=2, 
-                padding='SAME', data_format=data_format, trainable=True))
-            self.initial_layers.append(IdentityLayer(name='initial_max_pool', trainable=True))
+                padding='SAME', data_format=data_format, trainable=trainable))
+            self.initial_layers.append(IdentityLayer(name='initial_max_pool', trainable=trainable))
 
         self.block_groups = []
+        if FLAGS.fine_tune_after_block == 0:
+            trainable = True
         #first block
         self.block_groups.append(BlockGroup(filters=64, block_fn=block_fn, blocks=layers[0],
-            strides=1, name='block_group1', data_format=data_format, trainable=True))
+            strides=1, name='block_group1', data_format=data_format, trainable=trainable))
 
+        if FLAGS.fine_tune_after_block == 1:
+            trainable = True
         #second block
         self.block_groups.append(BlockGroup(filters=128, block_fn=block_fn, blocks=layers[1],
-            strides=2, name='block_group2', data_format=data_format, trainable=True))
+            strides=2, name='block_group2', data_format=data_format, trainable=trainable))
         
+        if FLAGS.fine_tune_after_block == 2:
+            trainable = True
         #third block
         self.block_groups.append(BlockGroup(filters=256, block_fn=block_fn, blocks=layers[2],
-            strides=2, name='block_group3', data_format=data_format, trainable=True))
+            strides=2, name='block_group3', data_format=data_format, trainable=trainable))
 
+        if FLAGS.fine_tune_after_block == 3:
+            trainable = True
         #fourth block
         self.block_groups.append(BlockGroup(filters=512, block_fn=block_fn, blocks=layers[3],
-            strides=2, name='block_group4', data_format=data_format, trainable=True))
+            strides=2, name='block_group4', data_format=data_format, trainable=trainable))
         
     def call(self, inputs, training):
         for layer in self.initial_layers:
             inputs = layer(inputs, training=training)
         
-        for layer in self.block_groups:
+        for i, layer in enumerate(self.block_groups):
+
+            if FLAGS.fine_tune_after_block == i:
+                inputs = tf.stop_gradient(inputs)
             inputs = layer(inputs, training=training)
+        
+        if FLAGS.fine_tune_after_block == 4:
+            inputs = tf.stop_gradient(inputs)
         
         if self.data_format == 'channels_last':
             inputs = tf.reduce_mean(inputs, [1, 2])
@@ -203,7 +226,9 @@ class Resnet(tf.keras.layers.Layer):
 def resnet(resnet_depth, cifar_stem=False, data_format='channels_last'):
     model_params = {
         18: {'block': ResidualBlock, 'layers': [2, 2, 2, 2]},
-        50: {'block': BottleNeckRes, 'layers': [3, 4, 6, 3]}}
+        50: {'block': BottleNeckRes, 'layers': [3, 4, 6, 3]},
+        101: {'block': BottleNeckRes, 'layers': [3, 4, 23, 3]},
+        152: {'block': BottleNeckRes, 'layers': [3, 8, 36, 3]}}
 
     if resnet_depth not in model_params:
         raise ValueError('Not implemented resnet_depth:', resnet_depth)

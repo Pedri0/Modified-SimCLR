@@ -4,10 +4,11 @@ from absl import logging
 import tensorflow.compat.v2 as tf
 import pandas as pd
 
-import data_util_pretrain
+import data_util_fine
+
 FLAGS = flags.FLAGS
 
-def bulid_input_fn(global_batch_size):
+def build_input_fn(global_batch_size):
     #Build input function.
     #Args:
     #    global_batch_size: Global batch size.
@@ -19,20 +20,16 @@ def bulid_input_fn(global_batch_size):
         batch_size = input_context.get_per_replica_batch_size(global_batch_size)
         logging.info('Global batch size: %d', global_batch_size)
         logging.info('Per-replica batch size: %d', batch_size)
-        preprocess_fn_pretrain = get_preprocess_fn(True, is_pretrain=True)
+        preprocess_fn_finetune = get_preprocess_fn(color_distortion=False)
         num_classes = 5
 
         def map_fn(image, label):
-            #Produces multiple transformations of the same batch for pretraining
-            xs = []
-            for _ in range(2):
-                xs.append(preprocess_fn_pretrain(image))
-            image = tf.concat(xs, -1)
+            image = preprocess_fn_finetune(image)
             label = tf.one_hot(label, num_classes)
             return image, label
 
-        logging.info('Using Astro pretrain data')
-        dataset = get_data_train()
+        logging.info('Using Astro finetuning data')
+        dataset = get_data_finetune()
 
         if input_context.num_input_pipelines > 1:
             dataset = dataset.shard(input_context.num_input_pipelines, input_context.input_pipeline_id)
@@ -47,36 +44,34 @@ def bulid_input_fn(global_batch_size):
     return _input_fn_
 
 def build_distributed_dataset(batch_size, strategy):
-    input_fn = bulid_input_fn(batch_size)
+    input_fn = build_input_fn(batch_size)
     return strategy.distribute_datasets_from_function(input_fn)
 
-def get_preprocess_fn(is_training, is_pretrain):
+def get_preprocess_fn(color_distortion):
     #Get function that accepts an image and returns a preprocessed image
-    test_crop=True
     return functools.partial(
-        data_util_pretrain.preprocess_image,
+        data_util_fine.preprocess_image,
         height = FLAGS.image_size,
         width= FLAGS.image_size,
-        is_training=is_training,
-        color_distort=is_pretrain,
-        test_crop=test_crop)
+        color_distort=color_distortion)
 
 
-def get_data_train():
-    logging.info('Loading Astro pretrain data')
-    data_dir = '/home/pedri0/Documents/imagenes_no_clasificadas_desi/'
+def get_data_finetune():
+    logging.info('Loading Astro finetune data')
+    data_dir = 'imagenes_clasificadas_nair/'
     def read_images(image_file, label):
         image = tf.io.read_file(data_dir + image_file)
         image = tf.image.decode_jpeg(image, channels = 3)
         return image, label
     
     AUTOTUNE = tf.data.experimental.AUTOTUNE
-    df = pd.read_csv('/home/pedri0/Documents/GitHub/Modified-SimCLR/SimCLRTF2/galaxies_train.csv')
+    df = pd.read_csv('nair_unbalanced_fine.csv')
     file_paths = df['name'].values
-    labels = tf.zeros([df.shape[0]], dtype=tf.int64)
-    ds_train = tf.data.Dataset.from_tensor_slices((file_paths, labels))
-    ds_train = ds_train.map(read_images, num_parallel_calls =AUTOTUNE)
-    return ds_train
+    labels = df['new_class'].values
+    labels = tf.convert_to_tensor(labels, dtype=tf.int32)
+    ds_finetune = tf.data.Dataset.from_tensor_slices((file_paths, labels))
+    ds_finetune = ds_finetune.map(read_images, num_parallel_calls =AUTOTUNE)
+    return ds_finetune
 
 def get_number_of_images(path_to_csv):
     df = pd.read_csv(path_to_csv)

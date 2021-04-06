@@ -1,4 +1,6 @@
 import tensorflow.compat.v2 as tf
+import tensorflow_addons as tfa
+import random
 
 
 @tf.function
@@ -12,6 +14,7 @@ def invert(image):
         #procesed image
     inverted_image = 1. - image
     return inverted_image
+
 
 @tf.function
 def solarize(image, threshold = 0.5):
@@ -27,6 +30,20 @@ def solarize(image, threshold = 0.5):
     inverted_image = invert(image)
     solarized_image = tf.where(image < threshold, image, inverted_image)
     return solarized_image
+
+
+@tf.function
+def solarize_plus_invert(image):
+    #solarizes tensor image above threshold, then invert it
+
+    #Args.
+        #image: float tensor of shape (height, width, channels)
+
+    #Returns.
+        #inverted solarized image
+    solarized = solarize(image, threshold = 0.5)
+    return invert(solarized)
+
 
 @tf.function
 def solarize_add_or_substract(image, threshold, add = True, number=0.5):
@@ -53,6 +70,7 @@ def solarize_add_or_substract(image, threshold, add = True, number=0.5):
 
     return solarize(transformed_image, threshold)
 
+
 @tf.function
 def auto_contrast(image):
     #Normalize image contrast by remapping the image histogram such that 
@@ -69,7 +87,8 @@ def auto_contrast(image):
     normalized_image = tf.image.convert_image_dtype(normalized_image, tf.float32, saturate=True)
     return normalized_image
 
-@tf.funtion
+
+@tf.function
 def blend(image_a, image_b, factor):
     #Blend image_a with image_b
 
@@ -94,6 +113,7 @@ def blend(image_a, image_b, factor):
 
         return blended_image
 
+
 @tf.function
 def color(image, magnitude):
     #modify the magnitude of color of an image tensor
@@ -109,8 +129,9 @@ def color(image, magnitude):
     colored = blend(gray, image, magnitude)
     return colored
 
+
 @tf.function
-def sharpness(image, magnitude):
+def sharpness(image, magnitude=0.5):
     #modify the magnitude of sharpness of an image tensor
 
     #Args.
@@ -128,7 +149,7 @@ def sharpness(image, magnitude):
     strides = [1, 1, 1, 1]
 
     #extract blurred image with the kernel
-    blurred_image = tf.nn.depthwise_conv2d(image[None, ...], blur_kernel)
+    blurred_image = tf.nn.depthwise_conv2d(image[None, ...], blur_kernel, strides, padding='VALID')
     blurred_image = tf.clip_by_value(blurred_image, 0., 255.)
     blurred_image = blurred_image[0]
 
@@ -143,6 +164,7 @@ def sharpness(image, magnitude):
     sharpened_image = tf.cast(sharpened_image, tf.uint8)
     sharpened_image = tf.image.convert_image_dtype(sharpened_image, tf.float32)
     return sharpened_image
+
 
 @tf.function
 def posterize(image, bits):
@@ -164,6 +186,7 @@ def posterize(image, bits):
     posterized_image = tf.bitwise.bitwise_and(image, mask)
     posterized_image = tf.image.convert_image_dtype(posterized_image, tf.float32, saturate=True)
     return posterized_image
+
 
 @tf.function
 def equalize(image):
@@ -205,7 +228,119 @@ def equalize(image):
     return equalized_image
 
 
+@tf.function
+def darker(image, number=0.5):
+    #substract number to each pixel tensor image
+    #Only float32 are supported
 
+    #Args.
+        #image: float tensor of shape (height, width, channels)
+        #number: float number to be added or substracted
+
+    #Returns.
+        #darker image
     
+    number = tf.cast(number, tf.float32)
+    darker_image = image - number
+    black , white = tf.constant(0., tf.float32), tf.constant(1., tf.float32)
+    darker_image = tf.clip_by_value(darker_image, clip_value_min=black, clip_value_max=white)
+    
+    return darker_image
 
 
+def functions_rand(image):
+
+    def apply_transform(i, x):
+
+        def sharpness_foo():
+            return sharpness(x, magnitude = tf.random.uniform([], 0, 1.0))
+
+        def posterize_foo():
+            return posterize(x, bits = tf.cast(tf.random.uniform([], 4, 9), tf.int8))
+    
+        x = tf.cond(tf.less(i,1),
+            lambda: sharpness_foo(),
+            lambda: posterize_foo())
+
+        return x
+
+    perm = tf.random.shuffle(tf.range(2))
+
+    for element in range(2):
+        image = apply_transform(perm[element], image)
+        image = tf.clip_by_value(image, 0., 1.)
+    
+    return image
+
+
+@tf.function
+def sobel_x_t(image):
+    #Gets sobel dx filter for an image tensor
+
+    #Args.
+        #image: float tensor of shape (height, width, channels)
+
+    #Returns.
+        # sobel filter dx or dy depending on random number
+    
+    sobel_x = tf.constant([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], tf.float32, shape = [3, 3, 1, 1])
+    sobel_x = tf.tile(sobel_x, [1, 1, 3, 1])
+    
+    pad_sizes = tf.constant([[1, 1], [1, 1], [0, 0]], tf.int32)
+    padded = tf.pad(image, pad_sizes, mode='REFLECT')
+    strides = [1,1,1,1]
+    sobel = tf.nn.depthwise_conv2d(padded[None, ...], sobel_x, strides, padding='VALID')
+    sobel = tf.clip_by_value(sobel, 0., 1.)
+    sobel = sobel[0]
+    
+    return sobel
+
+
+@tf.function
+def sobel_y_t(image):
+    #Gets sobel filter dy for an image tensor
+
+    #Args.
+        #image: float tensor of shape (height, width, channels)
+
+    #Returns.
+        # sobel filter dy
+    
+    sobel_y = tf.constant([[1, 0, -1], [2, 0, -2], [1, 0, -1]], tf.float32, shape = [3, 3, 1, 1])
+    sobel_y = tf.tile(sobel_y, [1, 1, 3, 1])
+    
+    pad_sizes = tf.constant([[1, 1], [1, 1], [0, 0]], tf.int32)
+    padded = tf.pad(image, pad_sizes, mode='REFLECT')
+    
+    
+    strides = [1,1,1,1]
+    sobel = tf.nn.depthwise_conv2d(padded[None, ...], sobel_y, strides, padding='VALID')
+    sobel = tf.clip_by_value(sobel, 0., 1.)
+    sobel = sobel[0]
+
+    return sobel
+
+
+@tf.function
+def sobel_edges(image):
+    #Gets the magnitude of the sobel filter dx, dy a.k.a sqrt{dx^2 + dy^2}
+
+    #Args.
+        #image: float tensor of shape (height, width, channels)
+
+    #Returns.
+        # sobel filter
+    
+    #random_integer = tf.cast(tf.random.uniform(shape=[2], minval = 3, maxval=11), tf.int8)
+
+    image  = tfa.image.gaussian_filter2d(image, sigma=(random.randint(3,13), random.randint(3,13)))
+
+    #image = tf.cond(tf.less(random_integer, 1),
+    #        lambda: sobel_x_t(image),
+    #        lambda: sobel_y_t(image))
+    x = sobel_x_t(image)
+    x = tf.math.square(x)
+    y = sobel_y_t(image)
+    y = tf.math.square(y)
+
+    return tf.math.sqrt(x+y)
