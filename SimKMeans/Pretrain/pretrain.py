@@ -9,7 +9,6 @@ import data_pretrain as data_lib
 import model_pretrain as model_lib
 import restore_checkpoint
 import contrastive_loss
-import k_means
 from sklearn.cluster import MiniBatchKMeans
 
 FLAGS = flags.FLAGS
@@ -71,7 +70,7 @@ def main(argv):
 
         with tf.GradientTape() as tape:
             loss = None
-            projection_head_outputs = model(images, training = True)
+            projection_head_outputs, representations = model(images, training = True)
 
             con_loss, logits_con, labels_con = contrastive_loss.contrastive_loss(projection_head_outputs, hidden_norm=FLAGS.hidden_norm,
                 temperature=FLAGS.temperature, strategy = strategy)
@@ -101,8 +100,7 @@ def main(argv):
             grads = tape.gradient(loss, model.trainable_variables)
             optimizer.apply_gradients(zip(grads, model.trainable_variables))
         
-        return tf.identity(projection_head_outputs)
-        #_ = tf.py_function(k_means.save_array, [counter, projection_head_outputs], tf.int8)
+        return tf.identity(representations)
 
     def get_new_balanced_ds(pseudolabels, csv_file):
         #calculate the size of the clusters
@@ -131,7 +129,7 @@ def main(argv):
             #duplicate the rows of datame according to the proportion size
             new_df = dataframe.loc[dataframe.index.repeat(1 if ratio==1.0 else round(ratio)+1)]
             #shuffle the new dataframe and get only n=maxcluster size samples
-            new_df = new_df.sample(n=clusters).reset_index(drop=True)
+            new_df = new_df.sample(n=clusters if clusters<2560 else 2560).reset_index(drop=True)
             #append new_df to balanced_datasets list
             balanced_datasets.append(new_df)
         

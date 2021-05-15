@@ -207,12 +207,9 @@ def preprocess_for_train(image, height, width, color_distort=True):
         #A preprocessed image `Tensor`.
     
     image = random_crop_with_resize(image, height, width)
-    if color_distort:
-        image = random_darker(image, p=0.5)
-        image = random_sharpness_with_posterize(image, p=0.3)
-        image = random_color_jitter(image)
-        image = random_solarize_plus_invert(image, p = 0.2)
-        image = random_sobel(image, p=0.35)
+    image = random_darker(image, p=0.5)
+    image = random_color_jitter(image)
+    image = random_sobel(image, p=0.3)
     image  = tf.image.random_flip_left_right(image)
     image  = tf.image.random_flip_up_down(image)
     image = tf.reshape(image, [height, width, 3])

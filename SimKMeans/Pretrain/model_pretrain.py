@@ -157,4 +157,4 @@ class Model(tf.keras.models.Model):
         #add heads
         projection_head_outputs, _ = self._projection_head(hiddens, training)
 
-        return projection_head_outputs
+        return projection_head_outputs, hiddens
