@@ -28,3 +28,4 @@ Inference/tf1/savedModels/astropre100epochsfine90/finetunas/checkpoint
 *.pb
 *.meta
 *.pt
+*.npy
